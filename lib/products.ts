@@ -12,7 +12,7 @@ export const products: Product[] = [
     id: "azul",
     name: "Terço Azul",
     price: 25,
-    image: "/blue-rosary-beads-elegant-on-white-background.jpg",
+    image: "/Terço-azul.jpg",
     description: "Terço artesanal com contas azuis, perfeito para momentos de oração e meditação.",
     color: "Azul",
   },
