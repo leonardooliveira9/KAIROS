@@ -35,11 +35,11 @@ export function SiteFooter() {
             <h4 className="font-semibold mb-4">Contato</h4>
             <div className="space-y-3 text-sm">
               <a
-                href="tel:+5511999999999"
+                href="tel:+6193930139"
                 className="flex items-center gap-2 text-background/70 hover:text-background transition-colors"
               >
                 <Phone className="w-4 h-4" />
-                (11) 99999-9999
+                (61) 9393-0139
               </a>
               <a
                 href="mailto:contato@kairos.com.br"
@@ -49,11 +49,11 @@ export function SiteFooter() {
                 contato@kairos.com.br
               </a>
               <a
-                href="#"
+                href="https://www.instagram.com/kairoscatolico/?hl=pt"
                 className="flex items-center gap-2 text-background/70 hover:text-background transition-colors"
               >
                 <Instagram className="w-4 h-4" />
-                @kairos.tercos
+                @kairoscatolico
               </a>
             </div>
           </div>
