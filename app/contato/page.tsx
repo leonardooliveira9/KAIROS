@@ -56,7 +56,7 @@ export default function ContatoPage() {
 
                 <div className="space-y-6">
                   <a
-                    href="tel:+5511999999999"
+                    href="tel:+61 9393-0139"
                     className="flex items-center gap-4 p-4 bg-secondary rounded-xl hover:bg-secondary/80 transition-colors"
                   >
                     <div className="w-12 h-12 bg-foreground text-background rounded-full flex items-center justify-center">
@@ -82,7 +82,7 @@ export default function ContatoPage() {
                   </a>
 
                   <a
-                    href="#"
+                    href="https://www.instagram.com/kairoscatolico/?hl=pt"
                     className="flex items-center gap-4 p-4 bg-secondary rounded-xl hover:bg-secondary/80 transition-colors"
                   >
                     <div className="w-12 h-12 bg-foreground text-background rounded-full flex items-center justify-center">
