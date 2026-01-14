@@ -60,7 +60,7 @@ export function StoreFooter() {
             <ul className="space-y-3 text-background/70">
               <li className="flex items-center gap-2">
                 <Phone className="w-4 h-4" />
-                <span>(11) 99999-9999</span>
+                <span>(61) 9393-0139</span>
               </li>
               <li className="flex items-center gap-2">
                 <Mail className="w-4 h-4" />
@@ -68,7 +68,7 @@ export function StoreFooter() {
               </li>
               <li className="flex items-start gap-2">
                 <MapPin className="w-4 h-4 mt-1" />
-                <span>São Paulo - SP</span>
+                <span>São Sebastião-DF</span>
               </li>
             </ul>
           </div>
