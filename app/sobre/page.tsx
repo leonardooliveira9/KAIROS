@@ -39,7 +39,7 @@ export default function SobrePage() {
               </div>
               <div className="relative">
                 <img
-                  src="/blue-rosary-beads-elegant-on-white-background.jpg"
+                  src="/Terço.jpg"
                   alt="Terço artesanal Kairos"
                   className="rounded-2xl shadow-lg w-full"
                 />
@@ -81,17 +81,17 @@ export default function SobrePage() {
             <h2 className="text-3xl font-bold text-foreground text-center mb-12">Nossas Peças</h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               <img
-                src="/blue-rosary-beads-elegant-on-white-background.jpg"
+                src="/Terço-azul.jpg"
                 alt="Terço Azul"
                 className="rounded-2xl w-full aspect-square object-cover"
               />
               <img
-                src="/black-rosary-beads-with-jesus-cross-elegant.jpg"
+                src="/Terço-preto.jpg"
                 alt="Terço Preto JESUS"
                 className="rounded-2xl w-full aspect-square object-cover"
               />
               <img
-                src="/pink-rose-rosary-beads-feminine-elegant.jpg"
+                src="/Terço-rosa.jpg"
                 alt="Terço Rosa REBECA"
                 className="rounded-2xl w-full aspect-square object-cover"
               />
