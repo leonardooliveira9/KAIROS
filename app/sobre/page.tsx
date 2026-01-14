@@ -39,7 +39,7 @@ export default function SobrePage() {
               </div>
               <div className="relative">
                 <img
-                  src="/Terço.jpg"
+                  src="/Terços.jpg"
                   alt="Terço artesanal Kairos"
                   className="rounded-2xl shadow-lg w-full"
                 />
