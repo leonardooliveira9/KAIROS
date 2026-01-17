@@ -42,12 +42,12 @@ export default function HomePage() {
               <div className="relative">
                 <div className="grid grid-cols-2 gap-4">
                   <img
-                    src="/blue-rosary-beads-elegant-on-white-background.jpg"
+                    src="/Terço-azul.jpg"
                     alt="Terço Azul"
                     className="rounded-2xl shadow-lg w-full aspect-square object-cover"
                   />
                   <img
-                    src="/pink-rose-rosary-beads-feminine-elegant.jpg"
+                    src="/Terço-rosa.jpg"
                     alt="Terço Rosa"
                     className="rounded-2xl shadow-lg w-full aspect-square object-cover mt-8"
                   />
@@ -106,7 +106,7 @@ export default function HomePage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
               <div>
                 <img
-                  src="/black-rosary-beads-with-jesus-cross-elegant.jpg"
+                  src="/Terços.jpg"
                   alt="Terço artesanal"
                   className="rounded-2xl shadow-lg w-full max-w-md mx-auto"
                 />

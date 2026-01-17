@@ -38,6 +38,13 @@ export function SiteHeader() {
                 {link.label}
               </Link>
             ))}
+            <Link
+              href="/admin/login"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors opacity-50 hover:opacity-100"
+              title="Painel administrativo"
+            >
+              ⚙️
+            </Link>
           </nav>
 
           <div className="flex items-center gap-4">
@@ -79,6 +86,13 @@ export function SiteHeader() {
                   {link.label}
                 </Link>
               ))}
+              <Link
+                href="/admin/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+              >
+                Painel Admin
+              </Link>
             </div>
           </nav>
         )}

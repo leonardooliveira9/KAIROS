@@ -19,7 +19,7 @@ const features = [
   {
     icon: Heart,
     title: "Tradição e Fé",
-    description: "Mais de 20 anos dedicados à arte sacra.",
+    description: "Mais de 1 ano dedicados à arte sacra.",
   },
 ]
 
