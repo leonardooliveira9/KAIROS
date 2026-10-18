@@ -1,62 +1,48 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
 import {
-  isIpBlocked,
-  recordLoginAttempt,
-  clearLoginAttempts,
-  createSession,
+  adminConfigured,
+  clearFailures,
+  clientIp,
+  createSessionToken,
+  isLockedOut,
+  recordFailure,
+  SESSION_COOKIE,
+  SESSION_MAX_AGE,
   verifyPassword,
-  hashPassword,
-} from "@/lib/auth-utils"
+} from "@/lib/server/auth"
 
-const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || hashPassword("21122005Nat")
+export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
-  try {
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-      request.headers.get("cf-connecting-ip") ||
-      "unknown"
-    const userAgent = request.headers.get("user-agent") || "unknown"
-
-    if (isIpBlocked(ip)) {
-      return NextResponse.json(
-        { error: "Acesso temporariamente indisponível. Tente novamente mais tarde." },
-        { status: 429 },
-      )
-    }
-
-    const body = await request.json()
-    const { password } = body
-
-    if (!password) {
-      recordLoginAttempt(ip)
-      return NextResponse.json({ error: "Senha inválida" }, { status: 401 })
-    }
-
-    const isValid = verifyPassword(password, ADMIN_PASSWORD_HASH)
-
-    if (!isValid) {
-      recordLoginAttempt(ip)
-      await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 500))
-      return NextResponse.json({ error: "Acesso negado" }, { status: 401 })
-    }
-
-    clearLoginAttempts(ip)
-    const sessionToken = createSession(ip, userAgent)
-
-    const response = NextResponse.json({ success: true, message: "Login realizado com sucesso" }, { status: 200 })
-
-    response.cookies.set("admin_session", sessionToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 24 * 60 * 60,
-      path: "/admin",
-    })
-
-    return response
-  } catch (error) {
-    console.error("[v0] Erro ao fazer login:", error)
-    return NextResponse.json({ error: "Erro ao processar login" }, { status: 500 })
+  if (!adminConfigured()) {
+    return NextResponse.json(
+      { error: "Painel não configurado: defina ADMIN_PASSWORD_HASH e SESSION_SECRET (veja .env.example)." },
+      { status: 503 },
+    )
   }
+
+  const ip = clientIp(request)
+  if (isLockedOut(ip)) {
+    return NextResponse.json({ error: "Muitas tentativas. Tente novamente em 15 minutos." }, { status: 429 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const password = typeof body.password === "string" ? body.password : ""
+
+  if (!password || !verifyPassword(password)) {
+    recordFailure(ip)
+    await new Promise((r) => setTimeout(r, 400 + Math.random() * 400))
+    return NextResponse.json({ error: "Senha incorreta." }, { status: 401 })
+  }
+
+  clearFailures(ip)
+  const response = NextResponse.json({ ok: true })
+  response.cookies.set(SESSION_COOKIE, createSessionToken(), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: SESSION_MAX_AGE,
+    path: "/",
+  })
+  return response
 }

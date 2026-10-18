@@ -1,75 +1,43 @@
-import type { NextRequest } from "next/server"
-import { NextResponse } from "next/server"
-import { orders } from "@/app/api/orders/route"
-import { validateSession } from "@/lib/auth-utils"
+import { NextResponse, type NextRequest } from "next/server"
+import { z } from "zod"
+import { isAdminRequest } from "@/lib/server/auth"
+import { getOrder, listOrders, updateOrder, type Order } from "@/lib/server/orders-store"
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "kairos123"
+export const runtime = "nodejs"
+export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
-  try {
-    const sessionToken = request.cookies.get("admin_session")?.value
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-      request.headers.get("cf-connecting-ip") ||
-      "unknown"
-    const userAgent = request.headers.get("user-agent") || "unknown"
-
-    if (!sessionToken || !validateSession(sessionToken, ip, userAgent)) {
-      return NextResponse.json({ error: "Acesso negado - Sessão inválida" }, { status: 401 })
-    }
-
-    const allOrders = Object.values(orders).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-
-    console.log(`[ADMIN] GET /api/admin/orders - IP: ${ip} - Timestamp: ${new Date().toISOString()}`)
-
-    return NextResponse.json({
-      success: true,
-      total: allOrders.length,
-      orders: allOrders,
-    })
-  } catch (error) {
-    console.error("[v0] Erro ao buscar pedidos do admin:", error)
-    return NextResponse.json({ error: "Erro ao buscar pedidos" }, { status: 500 })
-  }
+  if (!isAdminRequest(request)) return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  return NextResponse.json({ orders: listOrders() })
 }
 
+const patchSchema = z.object({
+  orderId: z.string().max(20),
+  status: z.enum(["awaiting_payment", "paid", "shipped", "canceled"]).optional(),
+  trackingCode: z.string().trim().max(40).optional(),
+})
+
 export async function PATCH(request: NextRequest) {
-  try {
-    const sessionToken = request.cookies.get("admin_session")?.value
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-      request.headers.get("cf-connecting-ip") ||
-      "unknown"
-    const userAgent = request.headers.get("user-agent") || "unknown"
+  if (!isAdminRequest(request)) return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
 
-    if (!sessionToken || !validateSession(sessionToken, ip, userAgent)) {
-      return NextResponse.json({ error: "Acesso negado - Sessão inválida" }, { status: 401 })
+  const parsed = patchSchema.safeParse(await request.json().catch(() => null))
+  if (!parsed.success) return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
+  const { orderId, status, trackingCode } = parsed.data
+
+  const order = getOrder(orderId)
+  if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 })
+
+  const patch: Partial<Order> = {}
+  if (trackingCode !== undefined) patch.trackingCode = trackingCode || undefined
+  if (status && status !== order.status) {
+    patch.status = status
+    const now = new Date().toISOString()
+    if (status === "paid" && !order.paidAt) patch.paidAt = now
+    if (status === "shipped") {
+      patch.shippedAt = now
+      if (!order.paidAt) patch.paidAt = now
     }
-
-    const body = await request.json()
-    const { orderId, status } = body
-
-    if (!orders[orderId]) {
-      return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 })
-    }
-
-    orders[orderId].status = status
-    if (status === "confirmed") {
-      orders[orderId].paidAt = new Date().toISOString()
-    }
-
-    console.log(
-      `[ADMIN] PATCH /api/admin/orders - OrderID: ${orderId} - NewStatus: ${status} - IP: ${ip} - Timestamp: ${new Date().toISOString()}`,
-    )
-
-    return NextResponse.json({
-      success: true,
-      order: orders[orderId],
-    })
-  } catch (error) {
-    console.error("[v0] Erro ao atualizar pedido:", error)
-    return NextResponse.json({ error: "Erro ao atualizar pedido" }, { status: 500 })
   }
+
+  return NextResponse.json({ order: updateOrder(orderId, patch) })
 }

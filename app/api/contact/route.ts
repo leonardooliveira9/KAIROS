@@ -1,39 +1,58 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
 import nodemailer from "nodemailer"
+import { z } from "zod"
+import { storeConfig } from "@/lib/store-config"
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  },
+export const runtime = "nodejs"
+
+const schema = z.object({
+  name: z.string().trim().min(2).max(100),
+  email: z.string().trim().email().max(160),
+  message: z.string().trim().min(5).max(2000),
 })
 
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
+
+const hits = new Map<string, number[]>()
+
 export async function POST(request: NextRequest) {
+  const ip = request.headers.get("x-real-ip") || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local"
+  const now = Date.now()
+  const recent = (hits.get(ip) ?? []).filter((t) => now - t < 60 * 60 * 1000)
+  if (recent.length >= 5) {
+    return NextResponse.json({ error: "Muitas mensagens. Tente novamente mais tarde." }, { status: 429 })
+  }
+
+  const parsed = schema.safeParse(await request.json().catch(() => null))
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Preencha nome, e-mail e uma mensagem." }, { status: 400 })
+  }
+
+  const { EMAIL_USER, EMAIL_PASSWORD, CONTACT_EMAIL_TO } = process.env
+  if (!EMAIL_USER || !EMAIL_PASSWORD) {
+    return NextResponse.json(
+      { error: `Formulário indisponível no momento. Fale conosco pelo WhatsApp ${storeConfig.contact.whatsappLabel}.` },
+      { status: 503 },
+    )
+  }
+
+  const { name, email, message } = parsed.data
   try {
-    const { name, email, message } = await request.json()
-
-    if (!name || !email || !message) {
-      return NextResponse.json({ error: "Todos os campos são obrigatórios" }, { status: 400 })
-    }
-
+    const transporter = nodemailer.createTransport({ service: "gmail", auth: { user: EMAIL_USER, pass: EMAIL_PASSWORD } })
     await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: "leonardooliveira2105@gmail.com",
-      subject: `Nova mensagem de contato de ${name}`,
-      html: `
-        <h2>Nova Mensagem de Contato</h2>
-        <p><strong>Nome:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Mensagem:</strong></p>
-        <p>${message.replace(/\n/g, "<br>")}</p>
-      `,
+      from: EMAIL_USER,
+      to: CONTACT_EMAIL_TO || EMAIL_USER,
       replyTo: email,
+      subject: `Contato pelo site: ${name.slice(0, 60)}`,
+      text: `Nome: ${name}\nE-mail: ${email}\n\n${message}`,
+      html: `<p><strong>Nome:</strong> ${escapeHtml(name)}</p><p><strong>E-mail:</strong> ${escapeHtml(email)}</p><p>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`,
     })
-
-    return NextResponse.json({ success: true, message: "Email enviado com sucesso!" }, { status: 200 })
-  } catch (error) {
-    console.error("Erro ao enviar email:", error)
-    return NextResponse.json({ error: "Erro ao enviar email. Tente novamente mais tarde." }, { status: 500 })
+    recent.push(now)
+    hits.set(ip, recent)
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error("[contact]", err)
+    return NextResponse.json({ error: "Não foi possível enviar agora. Tente pelo WhatsApp." }, { status: 502 })
   }
 }

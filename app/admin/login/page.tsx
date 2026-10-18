@@ -1,78 +1,64 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Loader2, Lock } from "lucide-react"
 
 export default function AdminLoginPage() {
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+  const [password, setPassword] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError("")
-    setIsLoading(true)
-
+    setLoading(true)
+    setError(null)
     try {
-      const response = await fetch("/api/admin/login", {
+      const res = await fetch("/api/admin/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
-        credentials: "include", // Enviar cookies automaticamente
       })
-
-      if (!response.ok) {
-        setError("Acesso negado - Senha incorreta")
-        return
-      }
-
-      router.push("/admin/dashboard")
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      router.replace("/admin/pedidos")
+      router.refresh()
     } catch (err) {
-      setError("Erro ao fazer login")
-    } finally {
-      setIsLoading(false)
+      setError(err instanceof Error ? err.message : "Erro ao entrar")
+      setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h1 className="text-3xl font-bold text-center mb-2 text-gray-900">Kairos</h1>
-          <p className="text-center text-gray-600 mb-8">Painel Administrativo</p>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Senha de Acesso</label>
-              <Input
-                type="password"
-                placeholder="Digite sua senha"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-                className="w-full"
-              />
-            </div>
-
-            {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">{error}</div>}
-
-            <Button
-              type="submit"
-              disabled={isLoading || !password}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {isLoading ? "Acessando..." : "Acessar Painel"}
-            </Button>
-          </form>
-        </div>
-      </div>
-    </div>
+    <main className="flex min-h-dvh items-center justify-center bg-background px-4">
+      <form onSubmit={submit} className="surface w-full max-w-sm p-8">
+        <span className="inline-flex size-12 items-center justify-center rounded-full bg-gold-soft text-gold-strong">
+          <Lock className="size-5" />
+        </span>
+        <h1 className="mt-5 font-serif text-2xl">Painel Kairos</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Acesso restrito à administração da loja.</p>
+        <label htmlFor="password" className="mt-6 block text-[13px] font-medium">
+          Senha
+        </label>
+        <input
+          id="password"
+          type="password"
+          autoComplete="current-password"
+          autoFocus
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="mt-1.5 h-11 w-full rounded-xl border border-input bg-card px-3.5 outline-none focus:border-gold focus:ring-2 focus:ring-gold/15"
+        />
+        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+        <button
+          type="submit"
+          disabled={loading || !password}
+          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary py-3 text-sm font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {loading && <Loader2 className="size-4 animate-spin" />} Entrar
+        </button>
+      </form>
+    </main>
   )
 }

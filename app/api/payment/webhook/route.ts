@@ -1,75 +1,50 @@
-import type { NextRequest } from "next/server"
-import { NextResponse } from "next/server"
 import crypto from "crypto"
-import { orders } from "../../orders/route"
+import { NextResponse, type NextRequest } from "next/server"
+import { findByChargeId, getOrder } from "@/lib/server/orders-store"
+import { syncPayment } from "@/lib/server/payment-sync"
 
-const WEBHOOK_SECRET = process.env.ABACATEPAY_WEBHOOK_SECRET!
+export const runtime = "nodejs"
+
+/*
+ * Webhook da AbacatePay. Cadastre a URL:
+ *   https://SEU-DOMINIO/api/payment/webhook?webhookSecret=<ABACATEPAY_WEBHOOK_SECRET>
+ * O conteúdo do evento é usado apenas para descobrir QUAL cobrança mudou;
+ * o status é sempre reconfirmado direto na API da AbacatePay antes de marcar como pago.
+ */
+function safeEqual(a: string, b: string) {
+  const x = Buffer.from(a)
+  const y = Buffer.from(b)
+  return x.length === y.length && crypto.timingSafeEqual(x, y)
+}
+
+function collectIds(value: unknown, out: Set<string>) {
+  if (typeof value === "string") {
+    if (/^pix_char_/.test(value) || /^KRS-[A-Z0-9]{8}$/.test(value)) out.add(value)
+  } else if (Array.isArray(value)) {
+    value.forEach((v) => collectIds(v, out))
+  } else if (value && typeof value === "object") {
+    Object.values(value).forEach((v) => collectIds(v, out))
+  }
+}
 
 export async function POST(request: NextRequest) {
-  try {
-
-    const signature = request.headers.get("x-signature")
-    const rawBody = await request.text()
-
-    if (!signature) {
-      console.error("[WEBHOOK] Assinatura ausente")
-      return NextResponse.json({ error: "Assinatura ausente" }, { status: 401 })
-    }
-
-    /**
-     * 🔐 Validação da assinatura
-     */
-    const expectedSignature = crypto
-      .createHmac("sha256", WEBHOOK_SECRET)
-      .update(rawBody)
-      .digest("hex")
-
-    if (signature !== expectedSignature) {
-      console.error("[WEBHOOK] Assinatura inválida")
-      return NextResponse.json({ error: "Assinatura inválida" }, { status: 401 })
-    }
-
-    const data = JSON.parse(rawBody)
-
-    const paymentId = data.id
-    const status = data.status
-    const orderId = data.external_id
-
-    console.log("[WEBHOOK] Dados recebidos:", {
-      paymentId,
-      orderId,
-      status,
-    })
-
-    if (!orderId || !orders[orderId]) {
-      console.warn("[WEBHOOK] Pedido não encontrado:", orderId)
-      return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 })
-    }
-
-    const order = orders[orderId]
-
-    /**
-     * ✅ Processar status
-     */
-    if (status === "paid") {
-      order.status = "paid"
-      order.paidAt = new Date().toISOString()
-      order.paymentId = paymentId
-
-      console.log("[WEBHOOK] ✅ Pedido pago com sucesso:", orderId)
-    }
-
-    if (status === "expired" || status === "canceled") {
-      order.status = "pending"
-      console.log("[WEBHOOK] ⏳ Pagamento expirado/cancelado:", orderId)
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error("[WEBHOOK] Erro interno:", error)
-    return NextResponse.json(
-      { error: "Erro ao processar webhook" },
-      { status: 500 }
-    )
+  const secret = process.env.ABACATEPAY_WEBHOOK_SECRET
+  const given = request.nextUrl.searchParams.get("webhookSecret") ?? ""
+  if (!secret || !safeEqual(given, secret)) {
+    return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
   }
+
+  const body = await request.json().catch(() => null)
+  const ids = new Set<string>()
+  collectIds(body, ids)
+
+  let updated = 0
+  for (const id of ids) {
+    const order = id.startsWith("KRS-") ? getOrder(id) : findByChargeId(id)
+    if (!order) continue
+    const synced = await syncPayment(order, { force: true })
+    if (synced.status === "paid") updated++
+  }
+
+  return NextResponse.json({ received: true, updated })
 }
