@@ -7,24 +7,15 @@ import { shippingFor, storeConfig } from "@/lib/store-config"
 import { buildStaticPix } from "@/lib/pix-brcode"
 import { newOrderId, saveOrder, type Order, type OrderItem } from "@/lib/server/orders-store"
 import { abacatePayEnabled, createPixCharge } from "@/lib/server/abacatepay"
-import { requestUser } from "@/lib/server/auth"
+import { clientIp, requestUser } from "@/lib/server/auth"
+import { takeRateLimit } from "@/lib/server/rate-limit"
 import { isFullyVerified, updateUser } from "@/lib/server/users-store"
 
 export const runtime = "nodejs"
 
-// Limite simples contra abuso: 10 pedidos por IP a cada 10 minutos
-const hits = new Map<string, number[]>()
-function rateLimited(ip: string) {
-  const now = Date.now()
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < 10 * 60 * 1000)
-  recent.push(now)
-  hits.set(ip, recent)
-  return recent.length > 10
-}
-
 export async function POST(request: NextRequest) {
-  const ip = request.headers.get("x-real-ip") || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local"
-  if (rateLimited(ip)) {
+  // limite contra abuso: 10 pedidos por IP a cada 10 minutos
+  if (!takeRateLimit(`checkout:ip:${clientIp(request)}`, 10, 10 * 60 * 1000)) {
     return NextResponse.json({ error: "Muitas tentativas. Aguarde alguns minutos." }, { status: 429 })
   }
 

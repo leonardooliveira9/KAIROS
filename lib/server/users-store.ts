@@ -1,6 +1,6 @@
 import "server-only"
 import crypto from "crypto"
-import { allDocs, findDocs, getDoc, putDoc } from "./db"
+import { allDocs, DuplicateError, findDocs, getDoc, insertDoc, putDoc } from "./db"
 
 export type Role = "admin" | "customer"
 
@@ -42,9 +42,10 @@ export type PublicUser = Omit<User, SecretField> & { hasPassword: boolean; googl
 // Guardado pelo módulo db: MySQL (DATABASE_URL) ou arquivo JSON local em desenvolvimento
 
 /**
- * E-mails em ADMIN_EMAILS (separados por vírgula) viram admin ao se cadastrar — mas só enquanto
- * a loja ainda não tem nenhum admin. Como o e-mail não é verificado, isso evita que alguém
- * crie depois uma conta com um desses e-mails e ganhe acesso. Demais admins: /admin/usuarios.
+ * E-mails em ADMIN_EMAILS (separados por vírgula) viram admin quando o e-mail é CONFIRMADO
+ * (link do e-mail, redefinição de senha ou login com Google) — e só enquanto a loja ainda não
+ * tem nenhum admin. Assim ninguém vira admin só por cadastrar o e-mail de outra pessoa.
+ * Demais admins: /admin/usuarios.
  */
 function bootstrapAdmins() {
   return new Set(
@@ -53,6 +54,12 @@ function bootstrapAdmins() {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
   )
+}
+
+/** Papel da conta depois de o e-mail ter sido confirmado */
+async function roleAfterVerification(user: Pick<User, "email" | "role">): Promise<Role> {
+  if (user.role === "admin" || !bootstrapAdmins().has(user.email)) return user.role
+  return (await countAdmins()) === 0 ? "admin" : user.role
 }
 
 export function hashPassword(password: string) {
@@ -92,11 +99,18 @@ export async function createUser(input: { name: string; email: string; password:
     name: input.name.trim(),
     email,
     passwordHash: hashPassword(input.password),
-    role: (await countAdmins()) === 0 && bootstrapAdmins().has(email) ? "admin" : "customer",
+    // e-mail ainda não confirmado: nunca nasce admin (veja roleAfterVerification)
+    role: "customer",
     createdAt: new Date().toISOString(),
     sessionVersion: 1,
   }
-  return putDoc("users", user)
+  try {
+    // o banco garante e-mail único, mesmo com dois cadastros simultâneos
+    return await insertDoc("users", user, "email")
+  } catch (err) {
+    if (err instanceof DuplicateError) return null
+    throw err
+  }
 }
 
 export async function updateUser(id: string, patch: Partial<Omit<User, "id" | "email" | "createdAt">>) {
@@ -155,6 +169,7 @@ export async function upsertGoogleUser(input: { uid: string; email: string; name
     const wasVerified = Boolean(existing.emailVerifiedAt)
     return (await updateUser(existing.id, {
       googleUid: input.uid,
+      role: await roleAfterVerification(existing),
       emailVerifiedAt: existing.emailVerifiedAt ?? now,
       emailVerifyTokenHash: undefined,
       emailVerifyExpiresAt: undefined,
@@ -167,13 +182,20 @@ export async function upsertGoogleUser(input: { uid: string; email: string; name
     name: input.name.trim() || email.split("@")[0],
     email,
     passwordHash: "",
-    role: (await countAdmins()) === 0 && bootstrapAdmins().has(email) ? "admin" : "customer",
+    // o Google já confirmou o e-mail
+    role: await roleAfterVerification({ email, role: "customer" }),
     createdAt: now,
     sessionVersion: 1,
     googleUid: input.uid,
     emailVerifiedAt: now,
   }
-  return putDoc("users", user)
+  try {
+    return await insertDoc("users", user, "email")
+  } catch (err) {
+    // outra requisição criou a conta com este e-mail ao mesmo tempo: liga o Google a ela
+    if (err instanceof DuplicateError) return upsertGoogleUser(input)
+    throw err
+  }
 }
 
 // --- Tokens de verificação de e-mail e de redefinição de senha ---------------
@@ -215,6 +237,7 @@ export async function consumeVerifyToken(token: string) {
   if (!user) return undefined
   return updateUser(user.id, {
     emailVerifiedAt: user.emailVerifiedAt ?? new Date().toISOString(),
+    role: await roleAfterVerification(user),
     emailVerifyTokenHash: undefined,
     emailVerifyExpiresAt: undefined,
   })
@@ -233,6 +256,7 @@ export async function resetPasswordWithToken(token: string, newPassword: string)
     passwordResetTokenHash: undefined,
     passwordResetExpiresAt: undefined,
     emailVerifiedAt: user.emailVerifiedAt ?? new Date().toISOString(),
+    role: await roleAfterVerification(user),
     emailVerifyTokenHash: undefined,
     emailVerifyExpiresAt: undefined,
   })

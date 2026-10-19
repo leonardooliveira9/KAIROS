@@ -55,7 +55,7 @@ Há dois papéis: **cliente** (padrão) e **admin**.
 - Quem entra com Google já tem o e-mail confirmado. Se já existia uma conta com o mesmo e-mail **não confirmado**,
   o Google é ligado a ela e a senha antiga é apagada (evita que alguém que cadastrou o e-mail de outra pessoa mantenha acesso).
 - Um celular confirmado só pode pertencer a uma conta. O telefone só muda por nova verificação.
-- **Primeiro admin**: coloque seu e-mail em `ADMIN_EMAILS` e crie a conta em `/cadastrar`.
+- **Primeiro admin**: coloque seu e-mail em `ADMIN_EMAILS`, crie a conta em `/cadastrar` e confirme o e-mail pelo link enviado (ou entre com o Google). O acesso de admin só é liberado depois da confirmação.
   Isso só funciona enquanto a loja não tem nenhum admin. Os próximos são promovidos em `/admin/usuarios`.
 - Senhas com scrypt; sessão em cookie `httpOnly` assinado com `SESSION_SECRET`
   (gere com `node scripts/generate-session-secret.js`).

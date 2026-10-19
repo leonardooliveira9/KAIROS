@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server"
 import nodemailer from "nodemailer"
 import { z } from "zod"
 import { storeConfig } from "@/lib/store-config"
+import { clientIp, sameOrigin } from "@/lib/server/auth"
+import { takeRateLimit } from "@/lib/server/rate-limit"
 
 export const runtime = "nodejs"
 
@@ -14,19 +16,17 @@ const schema = z.object({
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!)
 
-const hits = new Map<string, number[]>()
-
 export async function POST(request: NextRequest) {
-  const ip = request.headers.get("x-real-ip") || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "local"
-  const now = Date.now()
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < 60 * 60 * 1000)
-  if (recent.length >= 5) {
-    return NextResponse.json({ error: "Muitas mensagens. Tente novamente mais tarde." }, { status: 429 })
-  }
+  if (!sameOrigin(request)) return NextResponse.json({ error: "Origem inválida" }, { status: 403 })
 
   const parsed = schema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) {
     return NextResponse.json({ error: "Preencha nome, e-mail e uma mensagem." }, { status: 400 })
+  }
+
+  // até 5 mensagens por IP por hora
+  if (!takeRateLimit(`contact:ip:${clientIp(request)}`, 5, 60 * 60 * 1000)) {
+    return NextResponse.json({ error: "Muitas mensagens. Tente novamente mais tarde." }, { status: 429 })
   }
 
   const { EMAIL_USER, EMAIL_PASSWORD, CONTACT_EMAIL_TO } = process.env
@@ -48,8 +48,6 @@ export async function POST(request: NextRequest) {
       text: `Nome: ${name}\nE-mail: ${email}\n\n${message}`,
       html: `<p><strong>Nome:</strong> ${escapeHtml(name)}</p><p><strong>E-mail:</strong> ${escapeHtml(email)}</p><p>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`,
     })
-    recent.push(now)
-    hits.set(ip, recent)
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error("[contact]", err)

@@ -10,12 +10,16 @@ import type { Pool, RowDataPacket } from "mysql2/promise"
  * - Sem DATABASE_URL: memória + arquivo JSON em DATA_DIR (padrão ".data"), para desenvolvimento/VPS.
  *
  * Cada documento é guardado inteiro como JSON; buscas por campo usam JSON_EXTRACT.
+ * O e-mail das contas tem índice único (coluna gerada a partir do JSON).
  */
 
 export type Table = "users" | "orders"
 type Doc = { id: string; createdAt: string }
 
 export const databaseEnabled = () => Boolean(process.env.DATABASE_URL)
+
+/** insertDoc: já existe um documento com o mesmo id ou o mesmo valor no campo único */
+export class DuplicateError extends Error {}
 
 // --- MySQL -------------------------------------------------------------------
 
@@ -43,7 +47,27 @@ async function createPool() {
       ) DEFAULT CHARSET=utf8mb4`,
     )
   }
+  await ensureUniqueEmail(pool)
   return pool
+}
+
+/** Coluna gerada users.email + índice único. Tabelas antigas ganham a coluna no primeiro uso. */
+async function ensureUniqueEmail(pool: Pool) {
+  try {
+    await pool.query(
+      `ALTER TABLE users
+        ADD COLUMN email VARCHAR(255) GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.email'))) STORED,
+        ADD UNIQUE KEY users_email (email)`,
+    )
+  } catch (err) {
+    const code = (err as { code?: string }).code
+    if (code === "ER_DUP_FIELDNAME") return // já existe
+    if (code === "ER_DUP_ENTRY") {
+      console.error("[db] há contas com e-mail repetido; resolva no banco para ativar o índice único de e-mail")
+      return
+    }
+    throw err
+  }
 }
 
 function pool() {
@@ -97,6 +121,7 @@ export async function getDoc<T extends Doc>(table: Table, id: string): Promise<T
   return parse<T>(rows)[0]
 }
 
+/** Grava (cria ou substitui) pelo id. Para contas novas use insertDoc, que respeita o e-mail único. */
 export async function putDoc<T extends Doc>(table: Table, doc: T): Promise<T> {
   if (!databaseEnabled()) {
     fileTable(table).set(doc.id, doc)
@@ -107,6 +132,35 @@ export async function putDoc<T extends Doc>(table: Table, doc: T): Promise<T> {
     `INSERT INTO ${table} (id, created_at, data) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE data = VALUES(data)`,
     [doc.id, doc.createdAt, JSON.stringify(doc)],
   )
+  return doc
+}
+
+/**
+ * Cria um documento novo; nunca sobrescreve. Lança DuplicateError se o id já existir ou,
+ * com `uniqueField`, se outro documento já tiver o mesmo valor nesse campo.
+ * No MySQL a unicidade vem do índice (hoje só users.email); no arquivo, é conferida aqui.
+ */
+export async function insertDoc<T extends Doc>(table: Table, doc: T, uniqueField?: string): Promise<T> {
+  if (!databaseEnabled()) {
+    const docs = fileTable(table)
+    const value = uniqueField ? pick(doc, uniqueField) : undefined
+    if (docs.has(doc.id) || (uniqueField && [...docs.values()].some((d) => pick(d, uniqueField) === value))) {
+      throw new DuplicateError(`${table}: documento duplicado`)
+    }
+    docs.set(doc.id, doc)
+    persistFile(table)
+    return doc
+  }
+  try {
+    await (await pool()).query(`INSERT INTO ${table} (id, created_at, data) VALUES (?, ?, ?)`, [
+      doc.id,
+      doc.createdAt,
+      JSON.stringify(doc),
+    ])
+  } catch (err) {
+    if ((err as { code?: string }).code === "ER_DUP_ENTRY") throw new DuplicateError(`${table}: documento duplicado`)
+    throw err
+  }
   return doc
 }
 
