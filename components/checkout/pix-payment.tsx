@@ -19,7 +19,7 @@ export interface PixInfo {
   }
 }
 
-function useCountdown(expiresAt: string) {
+export function useCountdown(expiresAt: string) {
   const [left, setLeft] = useState(() => new Date(expiresAt).getTime() - Date.now())
   useEffect(() => {
     const t = setInterval(() => setLeft(new Date(expiresAt).getTime() - Date.now()), 1000)

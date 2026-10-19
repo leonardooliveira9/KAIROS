@@ -2,12 +2,27 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle2, KeyRound, Loader2, LogOut, MailWarning, Package, ShieldCheck, UserRound } from "lucide-react"
+import {
+  CheckCircle2,
+  Circle,
+  Copy,
+  KeyRound,
+  Loader2,
+  LogOut,
+  MailWarning,
+  Package,
+  QrCode,
+  RefreshCw,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react"
 import { toast } from "sonner"
 import { Field } from "@/components/checkout/field"
+import { useCountdown } from "@/components/checkout/pix-payment"
 import { isFullyVerified, useAuth } from "@/contexts/auth-context"
+import { whatsappLink } from "@/lib/store-config"
 import { PhoneVerification } from "./phone-verification"
 import { formatBRL, formatDateTime, maskCPF } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -18,13 +33,24 @@ interface AccountOrder {
   id: string
   status: "awaiting_payment" | "paid" | "shipped" | "canceled"
   createdAt: string
+  paidAt: string | null
+  shippedAt: string | null
   trackingCode: string | null
   items: { slug: string; name: string; quantity: number; price: number; image: string; details?: string }[]
+  subtotal: number
+  shipping: number
   total: number
+  /** PIX pendente cujo prazo já acabou */
+  paymentExpired: boolean
+  /** Presente só enquanto o PIX pendente ainda pode ser pago */
+  pix: { brCode: string; qrImage: string; expiresAt: string } | null
 }
 
-const statusLabel: Record<AccountOrder["status"], { label: string; className: string }> = {
+type DisplayStatus = AccountOrder["status"] | "expired"
+
+const statusLabel: Record<DisplayStatus, { label: string; className: string }> = {
   awaiting_payment: { label: "Aguardando PIX", className: "bg-warning-soft text-warning" },
+  expired: { label: "PIX expirado", className: "bg-secondary text-muted-foreground" },
   paid: { label: "Pago • em preparo", className: "bg-success-soft text-success" },
   shipped: { label: "Enviado", className: "bg-secondary text-foreground" },
   canceled: { label: "Cancelado", className: "bg-destructive/10 text-destructive" },
@@ -158,14 +184,61 @@ export function VerificationCard({ className = "mt-6" }: { className?: string })
 }
 
 function OrdersTab() {
+  const router = useRouter()
   const [orders, setOrders] = useState<AccountOrder[] | null>(null)
+  const [error, setError] = useState(false)
+  const previous = useRef<Map<string, AccountOrder["status"]>>(new Map())
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/account/orders", { cache: "no-store" })
+      if (res.status === 401) {
+        router.replace("/entrar?next=/conta")
+        return
+      }
+      if (!res.ok) throw new Error()
+      const data: { orders: AccountOrder[] } = await res.json()
+      // avisa quando um PIX pendente é confirmado com a página aberta
+      for (const o of data.orders) {
+        if (previous.current.get(o.id) === "awaiting_payment" && o.status === "paid") {
+          toast.success(`Pagamento do pedido ${o.id} confirmado!`)
+        }
+      }
+      previous.current = new Map(data.orders.map((o) => [o.id, o.status]))
+      setOrders(data.orders)
+      setError(false)
+    } catch {
+      setError(true)
+    }
+  }, [router])
 
   useEffect(() => {
-    fetch("/api/account/orders", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => setOrders(d.orders ?? []))
-      .catch(() => setOrders([]))
-  }, [])
+    load()
+  }, [load])
+
+  // enquanto houver PIX esperando pagamento, confere o status a cada 10s
+  const waiting = orders?.some((o) => o.pix) ?? false
+  useEffect(() => {
+    if (!waiting) return
+    const t = setInterval(load, 10_000)
+    return () => clearInterval(t)
+  }, [waiting, load])
+
+  if (error && !orders) {
+    return (
+      <div className="surface flex flex-col items-center justify-center p-10 text-center">
+        <p className="font-serif text-xl">Não foi possível carregar seus pedidos</p>
+        <p className="mt-1 text-sm text-muted-foreground">Confira sua conexão e tente de novo.</p>
+        <button
+          type="button"
+          onClick={load}
+          className="mt-5 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-5 py-2.5 text-sm"
+        >
+          <RefreshCw className="size-4" /> Tentar de novo
+        </button>
+      </div>
+    )
+  }
 
   if (!orders) {
     return (
@@ -181,8 +254,8 @@ function OrdersTab() {
         <Package className="size-7 text-gold" />
         <p className="mt-4 font-serif text-xl">Nenhum pedido ainda</p>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          Pedidos feitos com esta conta aparecem aqui. Compras feitas sem login podem ser consultadas em{" "}
-          <Link href="/pedido" className="underline underline-offset-4">Acompanhar pedido</Link>.
+          Os pedidos feitos com esta conta aparecem aqui. Compras antigas feitas sem login com este mesmo e-mail
+          aparecem depois que o e-mail é confirmado.
         </p>
         <Link href="/produtos" className="mt-6 rounded-full bg-primary px-6 py-3 text-xs font-medium uppercase tracking-[0.14em] text-primary-foreground">
           Ver terços
@@ -194,40 +267,209 @@ function OrdersTab() {
   return (
     <ul className="space-y-4">
       {orders.map((o) => (
-        <li key={o.id} className="surface p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="font-mono text-xs">{o.id}</p>
-              <p className="text-xs text-muted-foreground">{formatDateTime(o.createdAt)}</p>
-            </div>
-            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium", statusLabel[o.status].className)}>
-              {statusLabel[o.status].label}
-            </span>
-          </div>
-          <ul className="mt-4 flex flex-wrap gap-3">
-            {o.items.map((i, idx) => (
-              <li key={`${i.slug}-${idx}`} className="flex items-center gap-2.5 rounded-xl bg-secondary/60 p-2 pr-4 text-sm">
-                <Image src={i.image} alt="" width={40} height={40} className="size-10 rounded-lg object-cover" />
-                <span>
-                  {i.quantity}× {i.name}
-                  {i.details && <span className="block text-xs text-muted-foreground">{i.details}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-4 text-sm">
-            {o.trackingCode ? (
-              <span>
-                Rastreio: <strong className="font-mono">{o.trackingCode}</strong>
-              </span>
-            ) : (
-              <span className="text-muted-foreground">Código de rastreio disponível após o envio</span>
-            )}
-            <span className="font-serif text-lg">{formatBRL(o.total)}</span>
-          </div>
-        </li>
+        <OrderCard key={o.id} order={o} onExpired={load} />
       ))}
     </ul>
+  )
+}
+
+/** Status mostrado ao cliente: PIX pendente e vencido aparece como expirado */
+function displayStatus(o: AccountOrder): DisplayStatus {
+  return o.status === "awaiting_payment" && o.paymentExpired ? "expired" : o.status
+}
+
+function OrderCard({ order: o, onExpired }: { order: AccountOrder; onExpired: () => void }) {
+  const shown = displayStatus(o)
+  const [showPix, setShowPix] = useState(false)
+  const stopped = shown === "canceled" || shown === "expired"
+
+  const steps = [
+    { label: "Pedido feito", at: o.createdAt },
+    { label: "Pagamento confirmado", at: o.paidAt },
+    { label: "Enviado", at: o.shippedAt },
+  ]
+
+  return (
+    <li className="surface p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="font-mono text-xs">{o.id}</p>
+          <p className="text-xs text-muted-foreground">{formatDateTime(o.createdAt)}</p>
+        </div>
+        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium", statusLabel[shown].className)}>
+          {statusLabel[shown].label}
+        </span>
+      </div>
+
+      <ul className="mt-4 flex flex-wrap gap-3">
+        {o.items.map((i, idx) => (
+          <li key={`${i.slug}-${idx}`} className="flex items-center gap-2.5 rounded-xl bg-secondary/60 p-2 pr-4 text-sm">
+            <Image src={i.image} alt="" width={40} height={40} className="size-10 rounded-lg object-cover" />
+            <span>
+              {i.quantity}× {i.name} <span className="text-muted-foreground">· {formatBRL(i.price * i.quantity)}</span>
+              {i.details && <span className="block text-xs text-muted-foreground">{i.details}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {!stopped && (
+        <ol className="mt-4 grid gap-2 text-xs sm:grid-cols-3">
+          {steps.map((s) => (
+            <li key={s.label} className={cn("flex items-center gap-2", !s.at && "text-muted-foreground")}>
+              {s.at ? <CheckCircle2 className="size-4 shrink-0 text-success" /> : <Circle className="size-4 shrink-0" />}
+              <span>
+                {s.label}
+                {s.at && <span className="block text-muted-foreground">{formatDateTime(s.at)}</span>}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {o.pix && (
+        <div className="mt-4 rounded-xl bg-warning-soft p-4 text-sm text-warning">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>Este pedido está esperando o pagamento via PIX.</p>
+            <button
+              type="button"
+              onClick={() => setShowPix((v) => !v)}
+              aria-expanded={showPix}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground"
+            >
+              <QrCode className="size-3.5" /> {showPix ? "Esconder PIX" : "Pagar agora"}
+            </button>
+          </div>
+          {showPix && <OrderPix pix={o.pix} total={o.total} onExpired={onExpired} />}
+        </div>
+      )}
+
+      {shown === "expired" && (
+        <div className="mt-4 rounded-xl bg-secondary/70 p-4 text-sm">
+          <p>O prazo deste PIX acabou e o pagamento não foi identificado.</p>
+          <p className="mt-1 text-muted-foreground">
+            Se você já pagou,{" "}
+            <a
+              href={whatsappLink(`Olá! Paguei o pedido ${o.id} e ele aparece como PIX expirado.`)}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-4"
+            >
+              fale conosco pelo WhatsApp
+            </a>
+            . Se não, é só{" "}
+            <Link href="/produtos" className="underline underline-offset-4">
+              fazer um novo pedido
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+
+      <div className="mt-4 space-y-1 border-t border-border/70 pt-4 text-sm">
+        <div className="flex justify-between text-muted-foreground">
+          <span>Subtotal</span>
+          <span>{formatBRL(o.subtotal)}</span>
+        </div>
+        <div className="flex justify-between text-muted-foreground">
+          <span>Frete</span>
+          <span>{o.shipping === 0 ? "Grátis" : formatBRL(o.shipping)}</span>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+          {o.trackingCode ? (
+            <TrackingCode code={o.trackingCode} />
+          ) : (
+            <span className="text-muted-foreground">
+              {stopped ? "Este pedido não será enviado" : "Código de rastreio disponível após o envio"}
+            </span>
+          )}
+          <span className="font-serif text-lg">{formatBRL(o.total)}</span>
+        </div>
+      </div>
+    </li>
+  )
+}
+
+function OrderPix({
+  pix,
+  total,
+  onExpired,
+}: {
+  pix: NonNullable<AccountOrder["pix"]>
+  total: number
+  onExpired: () => void
+}) {
+  const { expired, label } = useCountdown(pix.expiresAt)
+
+  // o prazo acabou com a tela aberta: recarrega para mostrar o pedido como expirado
+  useEffect(() => {
+    if (expired) onExpired()
+  }, [expired, onExpired])
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(pix.brCode)
+      toast.success("Código PIX copiado")
+    } catch {
+      toast.error("Não foi possível copiar. Selecione o código e copie manualmente.")
+    }
+  }
+
+  return (
+    <div className="mt-4 grid gap-4 rounded-xl bg-card p-4 text-foreground sm:grid-cols-[160px_1fr]">
+      <div className="mx-auto w-full max-w-[200px] rounded-lg bg-white p-2">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={pix.qrImage} alt="QR Code PIX do pedido" className="aspect-square w-full" />
+      </div>
+      <div className="flex min-w-0 flex-col justify-center gap-3">
+        <p className="text-sm">
+          Pague <strong>{formatBRL(total)}</strong> pelo app do banco. Expira em{" "}
+          <strong className="tabular-nums">{label}</strong>.
+        </p>
+        <input
+          readOnly
+          aria-label="Código PIX copia e cola"
+          value={pix.brCode}
+          onFocus={(e) => e.currentTarget.select()}
+          className="h-10 min-w-0 rounded-lg bg-secondary px-3 font-mono text-xs text-muted-foreground outline-none"
+        />
+        <button
+          type="button"
+          onClick={copy}
+          className="inline-flex h-10 w-fit items-center gap-2 rounded-lg bg-primary px-4 text-xs font-medium text-primary-foreground"
+        >
+          <Copy className="size-3.5" /> Copiar código PIX
+        </button>
+        <p className="text-xs text-muted-foreground">Depois de pagar, o status desta página atualiza sozinho.</p>
+      </div>
+    </div>
+  )
+}
+
+function TrackingCode({ code }: { code: string }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      toast.success("Código de rastreio copiado")
+    } catch {
+      toast.error("Não foi possível copiar")
+    }
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      Rastreio: <strong className="font-mono">{code}</strong>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copiar código de rastreio"
+        className="rounded-full p-1 text-muted-foreground hover:text-foreground"
+      >
+        <Copy className="size-3.5" />
+      </button>
+      <a href="https://rastreamento.correios.com.br/" target="_blank" rel="noreferrer" className="text-xs underline underline-offset-4">
+        Rastrear nos Correios
+      </a>
+    </span>
   )
 }
 
