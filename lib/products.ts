@@ -65,7 +65,7 @@ const allProducts: Product[] = [
     price,
     color: "preto",
     badge: "Mais Procurado",
-    materials: "Madeira nobre escura • Cruz metálica",
+    materials: "Contas foscas pretas • Cruz metálica",
     description: "Contas foscas pretas de textura aveludada, entremeio com relevo gravado JESUS e crucifixo.",
     note: "Força, sobriedade e presença espiritual para o dia a dia.",
     longDescription:

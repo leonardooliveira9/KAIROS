@@ -3,12 +3,13 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Menu, Moon, Search, ShoppingBag, Sun, UserRound, X } from "lucide-react"
+import { Menu, Moon, Search, ShoppingBag, Sun, X } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useCart } from "@/contexts/cart-context"
 import { cn } from "@/lib/utils"
 import { Logo } from "./logo"
 import { SearchDialog } from "./search-dialog"
+import { UserMenu, useAccountLinks } from "./user-menu"
 
 const links = [
   { href: "/", label: "Início" },
@@ -38,6 +39,7 @@ export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [bump, setBump] = useState(false)
+  const accountLinks = useAccountLinks()
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8)
@@ -124,14 +126,7 @@ export function SiteHeader() {
               </span>
             )}
           </IconButton>
-          <Link
-            href="/pedido"
-            aria-label="Acompanhar meu pedido"
-            title="Acompanhar pedido"
-            className="ml-1 hidden size-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity hover:opacity-85 sm:inline-flex"
-          >
-            <UserRound className="size-4" />
-          </Link>
+          <UserMenu />
           <IconButton className="md:hidden" aria-label="Abrir menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>
             {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </IconButton>
@@ -141,7 +136,7 @@ export function SiteHeader() {
       {menuOpen && (
         <nav aria-label="Menu móvel" className="border-t border-border/70 bg-background md:hidden">
           <ul className="container-k flex flex-col py-3">
-            {[...links, { href: "/pedido", label: "Acompanhar pedido" }].map((link) => (
+            {[...links, { href: "/pedido", label: "Acompanhar pedido" }, ...accountLinks].map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}

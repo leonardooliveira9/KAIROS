@@ -5,6 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { ArrowLeft, ArrowRight, Check, Loader2, MessageCircle, ShoppingBag, UserRound, MapPin } from "lucide-react"
 import { toast } from "sonner"
 import { useCart } from "@/contexts/cart-context"
+import { isFullyVerified, useAuth } from "@/contexts/auth-context"
+import { VerificationCard } from "@/components/auth/account-dashboard"
+import { GoogleButton } from "@/components/auth/google-button"
 import { customerSchema, addressSchema, fieldErrors, UFS } from "@/lib/validation"
 import { formatBRL, maskCEP, maskCPF, maskPhone, onlyDigits } from "@/lib/format"
 import { storeConfig, whatsappLink } from "@/lib/store-config"
@@ -43,6 +46,7 @@ function writeSession(key: string, value: unknown) {
 
 export function CheckoutFlow() {
   const cart = useCart()
+  const { user, loading: authLoading, setUser } = useAuth()
   const [step, setStep] = useState(1)
   const [customer, setCustomer] = useState<Customer>(emptyCustomer)
   const [address, setAddress] = useState<Address>(emptyAddress)
@@ -86,6 +90,18 @@ export function CheckoutFlow() {
   useEffect(() => {
     if (restored.current) writeSession(DRAFT_KEY, { customer, address })
   }, [customer, address])
+
+  // logado: preenche os campos vazios com os dados da conta
+  useEffect(() => {
+    if (!user) return
+    setCustomer((c) => ({
+      fullName: c.fullName || user.name,
+      // e-mail e telefone do pedido são sempre os confirmados na conta
+      email: user.email,
+      phone: user.phone ? maskPhone(user.phone) : "",
+      cpf: c.cpf || (user.cpf ? maskCPF(user.cpf) : ""),
+    }))
+  }, [user])
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" })
@@ -226,7 +242,7 @@ export function CheckoutFlow() {
     createPix()
   }
 
-  if (!cart.hydrated) {
+  if (!cart.hydrated || authLoading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -247,6 +263,46 @@ export function CheckoutFlow() {
         <Link href="/produtos" className="mt-6 rounded-full bg-primary px-6 py-3 text-xs font-medium uppercase tracking-[0.14em] text-primary-foreground">
           Ver terços
         </Link>
+      </div>
+    )
+  }
+
+  // Compra exige conta com e-mail e telefone confirmados
+  if (!user || !isFullyVerified(user)) {
+    return (
+      <div className="container-k py-8 sm:py-10">
+        <h1 className="sr-only">Finalizar pedido</h1>
+        <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr]">
+          {!user ? (
+            <section className="surface p-6 sm:p-8">
+              <p className="eyebrow flex items-center gap-1.5">
+                <UserRound className="size-3.5" /> Antes de pagar
+              </p>
+              <h2 className="mt-2 font-serif text-2xl">Entre para finalizar sua compra</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Para sua segurança, os pedidos são feitos com uma conta com e-mail e celular confirmados. Sua sacola fica
+                guardada.
+              </p>
+              <div className="mt-6 space-y-3">
+                <GoogleButton onSuccess={setUser} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Link href="/entrar?next=/checkout" className="inline-flex items-center justify-center rounded-full bg-primary py-3 text-sm font-medium text-primary-foreground">
+                    Entrar com e-mail
+                  </Link>
+                  <Link href="/cadastrar?next=/checkout" className="inline-flex items-center justify-center rounded-full border border-border bg-card py-3 text-sm font-medium">
+                    Criar conta
+                  </Link>
+                </div>
+              </div>
+            </section>
+          ) : (
+            <VerificationCard className="" />
+          )}
+          <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+            <OrderSummary lines={lines} subtotal={cart.subtotal} shipping={cart.shipping} />
+            <ProtectedCard />
+          </aside>
+        </div>
       </div>
     )
   }
@@ -284,9 +340,10 @@ export function CheckoutFlow() {
                   type="email"
                   autoComplete="email"
                   value={customer.email}
-                  onChange={(e) => setC("email", e.target.value)}
+                  readOnly
+                  aria-readonly
                   error={errors.email}
-                  placeholder="voce@email.com"
+                  hint="Confirmado na sua conta"
                 />
                 <Field
                   label="WhatsApp"
@@ -295,9 +352,10 @@ export function CheckoutFlow() {
                   inputMode="tel"
                   autoComplete="tel-national"
                   value={customer.phone}
-                  onChange={(e) => setC("phone", maskPhone(e.target.value))}
+                  readOnly
+                  aria-readonly
                   error={errors.phone}
-                  placeholder="(61) 99999-9999"
+                  hint="Confirmado por SMS"
                 />
                 <Field
                   label="CPF"

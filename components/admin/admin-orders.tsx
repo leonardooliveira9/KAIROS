@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -8,9 +7,7 @@ import {
   Check,
   ClipboardCopy,
   Clock,
-  ExternalLink,
   Loader2,
-  LogOut,
   MessageCircle,
   Package,
   RefreshCw,
@@ -72,7 +69,7 @@ export function AdminOrders() {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/orders", { cache: "no-store" })
-      if (res.status === 401) return router.replace("/admin/login")
+      if (res.status === 401 || res.status === 403) return router.replace("/entrar?next=/admin")
       const data = await res.json()
       setOrders(data.orders)
     } catch {
@@ -98,11 +95,6 @@ export function AdminOrders() {
     if (!res.ok) return toast.error(data.error || "Erro ao atualizar")
     setOrders((list) => list.map((o) => (o.id === orderId ? data.order : o)))
     toast.success("Pedido atualizado")
-  }
-
-  const logout = async () => {
-    await fetch("/api/admin/logout", { method: "POST" })
-    router.replace("/admin/login")
   }
 
   const metrics = useMemo(() => {
@@ -131,17 +123,9 @@ export function AdminOrders() {
           <p className="eyebrow">Painel Kairos</p>
           <h1 className="mt-1 font-serif text-3xl">Pedidos</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/" target="_blank" className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm">
-            Ver loja <ExternalLink className="size-3.5" />
-          </Link>
-          <button type="button" onClick={load} className="inline-flex size-9 items-center justify-center rounded-full border border-border bg-card" aria-label="Atualizar">
-            <RefreshCw className="size-4" />
-          </button>
-          <button type="button" onClick={logout} className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground">
-            <LogOut className="size-3.5" /> Sair
-          </button>
-        </div>
+        <button type="button" onClick={load} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm" aria-label="Atualizar">
+          <RefreshCw className="size-4" /> Atualizar
+        </button>
       </header>
 
       <ul className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">

@@ -6,6 +6,8 @@ import { shippingFor, storeConfig } from "@/lib/store-config"
 import { buildStaticPix } from "@/lib/pix-brcode"
 import { newOrderId, saveOrder, type Order, type OrderItem } from "@/lib/server/orders-store"
 import { abacatePayEnabled, createPixCharge } from "@/lib/server/abacatepay"
+import { requestUser } from "@/lib/server/auth"
+import { isFullyVerified, updateUser } from "@/lib/server/users-store"
 
 export const runtime = "nodejs"
 
@@ -25,7 +27,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Muitas tentativas. Aguarde alguns minutos." }, { status: 429 })
   }
 
-  const parsed = checkoutSchema.safeParse(await request.json().catch(() => null))
+  // Compra exige conta com e-mail e telefone confirmados
+  const user = requestUser(request)
+  if (!user) {
+    return NextResponse.json({ error: "Entre na sua conta para finalizar a compra.", code: "login_required" }, { status: 401 })
+  }
+  if (!isFullyVerified(user)) {
+    return NextResponse.json(
+      { error: "Confirme seu e-mail e seu telefone antes de finalizar a compra.", code: "verification_required" },
+      { status: 403 },
+    )
+  }
+
+  const body = await request.json().catch(() => null)
+  // e-mail e telefone usados no pedido são sempre os verificados da conta
+  if (body?.customer) {
+    body.customer.email = user.email
+    body.customer.phone = user.phone
+  }
+  const parsed = checkoutSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: "Confira os dados informados.", fields: fieldErrors(parsed.error) }, { status: 400 })
   }
@@ -92,8 +112,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  if (!user.cpf) updateUser(user.id, { cpf: customer.cpf })
+
   saveOrder({
     id,
+    userId: user.id,
     createdAt: new Date().toISOString(),
     status: "awaiting_payment",
     customer,

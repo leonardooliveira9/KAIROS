@@ -28,6 +28,8 @@ export interface Order {
     state: string
     notes: string
   }
+  /** Conta que fez o pedido (vazio = compra como visitante) */
+  userId?: string
   items: OrderItem[]
   subtotal: number
   shipping: number
@@ -140,4 +142,17 @@ export function publicOrder(order: Order) {
     shipping: order.shipping,
     total: order.total,
   }
+}
+
+/**
+ * Pedidos feitos com a conta logada. Pedidos de visitante com o mesmo e-mail só entram quando
+ * o e-mail da conta foi verificado (`verifiedEmail`) — senão alguém poderia se cadastrar com o
+ * e-mail de outra pessoa e ver as compras dela.
+ */
+export function listOrdersForUser(userId: string, verifiedEmail?: string) {
+  load()
+  const email = verifiedEmail?.trim().toLowerCase()
+  return [...store.orders.values()]
+    .filter((o) => o.userId === userId || (!o.userId && !!email && o.customer.email.toLowerCase() === email))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }

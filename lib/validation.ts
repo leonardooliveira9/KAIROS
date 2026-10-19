@@ -66,3 +66,42 @@ export function fieldErrors(error: z.ZodError) {
   }
   return out
 }
+
+export const passwordSchema = z
+  .string()
+  .min(8, "A senha precisa ter pelo menos 8 caracteres")
+  .max(128, "Senha muito longa")
+
+export const registerSchema = z.object({
+  name: z.string().trim().min(2, "Informe seu nome").max(120),
+  email: z.string().trim().toLowerCase().email("E-mail inválido").max(160),
+  password: passwordSchema,
+})
+
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email("E-mail inválido").max(160),
+  password: z.string().min(1, "Informe a senha").max(128),
+})
+
+export const profileSchema = z.object({
+  name: z.string().trim().min(2, "Informe seu nome").max(120),
+  cpf: z
+    .string()
+    .transform(onlyDigits)
+    .refine((v) => v === "" || isValidCPF(v), "CPF inválido"),
+})
+
+export const changePasswordSchema = z.object({
+  // vazio só é aceito em contas criadas pelo Google que ainda não têm senha
+  currentPassword: z.string().max(128).optional().default(""),
+  newPassword: passwordSchema,
+})
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email("E-mail inválido").max(160),
+})
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(10).max(200),
+  password: passwordSchema,
+})

@@ -1,9 +1,11 @@
 import "server-only"
 import crypto from "crypto"
-import type { NextRequest } from "next/server"
+import { cookies } from "next/headers"
+import { NextResponse, type NextRequest } from "next/server"
+import { getUser, type Role, type User } from "./users-store"
 
-export const SESSION_COOKIE = "kairos_admin"
-export const SESSION_MAX_AGE = 12 * 60 * 60 // 12 horas, em segundos
+export const SESSION_COOKIE = "kairos_session"
+export const SESSION_MAX_AGE = 30 * 24 * 60 * 60 // 30 dias, em segundos
 
 const MAX_ATTEMPTS = 5
 const LOCKOUT_MS = 15 * 60 * 1000
@@ -16,49 +18,78 @@ function sessionSecret() {
   return secret
 }
 
-export function adminConfigured() {
-  return Boolean(process.env.ADMIN_PASSWORD_HASH && process.env.SESSION_SECRET)
-}
-
-/** Formato do hash: scrypt:<salt hex>:<hash hex> — gere com `node scripts/generate-password-hash.js` */
-export function verifyPassword(password: string) {
-  const stored = process.env.ADMIN_PASSWORD_HASH ?? ""
-  const [algo, saltHex, hashHex] = stored.split(":")
-  if (algo !== "scrypt" || !saltHex || !hashHex) return false
-  const expected = Buffer.from(hashHex, "hex")
-  const actual = crypto.scryptSync(password, Buffer.from(saltHex, "hex"), expected.length)
-  return crypto.timingSafeEqual(actual, expected)
-}
-
 function sign(payload: string) {
   return crypto.createHmac("sha256", sessionSecret()).update(payload).digest("base64url")
 }
 
-/** Token assinado e sem estado: funciona com várias instâncias do servidor */
-export function createSessionToken() {
+/** Token assinado e sem estado: { uid, v (versão da sessão), exp } */
+export function createSessionToken(user: User) {
   const payload = Buffer.from(
-    JSON.stringify({ exp: Date.now() + SESSION_MAX_AGE * 1000, n: crypto.randomBytes(8).toString("hex") }),
+    JSON.stringify({ uid: user.id, v: user.sessionVersion, exp: Date.now() + SESSION_MAX_AGE * 1000 }),
   ).toString("base64url")
   return `${payload}.${sign(payload)}`
 }
 
-export function isValidSession(token: string | undefined) {
-  if (!token) return false
+/** Valida o token e devolve o usuário atual (o papel é lido do cadastro, nunca do cookie) */
+export function userFromToken(token: string | undefined): User | null {
+  if (!token) return null
   const [payload, signature] = token.split(".")
-  if (!payload || !signature) return false
+  if (!payload || !signature) return null
   try {
     const expected = Buffer.from(sign(payload))
     const given = Buffer.from(signature)
-    if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return false
-    const { exp } = JSON.parse(Buffer.from(payload, "base64url").toString())
-    return typeof exp === "number" && exp > Date.now()
+    if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return null
+    const { uid, v, exp } = JSON.parse(Buffer.from(payload, "base64url").toString())
+    if (typeof exp !== "number" || exp < Date.now()) return null
+    const user = getUser(uid)
+    if (!user || user.sessionVersion !== v) return null
+    return user
   } catch {
-    return false
+    return null
   }
 }
 
-export function isAdminRequest(request: NextRequest) {
-  return isValidSession(request.cookies.get(SESSION_COOKIE)?.value)
+export function setSessionCookie(response: NextResponse, user: User) {
+  response.cookies.set(SESSION_COOKIE, createSessionToken(user), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: SESSION_MAX_AGE,
+    path: "/",
+  })
+  return response
+}
+
+export function clearSessionCookie(response: NextResponse) {
+  response.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 })
+  return response
+}
+
+/** Para rotas de API */
+export function requestUser(request: NextRequest) {
+  return userFromToken(request.cookies.get(SESSION_COOKIE)?.value)
+}
+
+/** Para Server Components / layouts */
+export async function currentUser() {
+  return userFromToken((await cookies()).get(SESSION_COOKIE)?.value)
+}
+
+/**
+ * Exige login (e opcionalmente um papel) numa rota de API.
+ * Uso: const auth = requireRole(request, "admin"); if (auth instanceof NextResponse) return auth
+ */
+export function requireRole(request: NextRequest, role?: Role) {
+  const user = requestUser(request)
+  if (!user) return NextResponse.json({ error: "Faça login para continuar." }, { status: 401 })
+  if (role && user.role !== role) return NextResponse.json({ error: "Sem permissão." }, { status: 403 })
+  return user
+}
+
+/** Bloqueia POST/PATCH vindos de outro site (defesa extra além do SameSite=Lax) */
+export function sameOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin")
+  return !origin || origin === request.nextUrl.origin
 }
 
 export function clientIp(request: NextRequest) {
@@ -69,25 +100,25 @@ export function clientIp(request: NextRequest) {
   )
 }
 
-// Limite de tentativas por IP (memória da instância)
+// Limite de tentativas de login por IP + e-mail (memória da instância)
 const attempts = new Map<string, { count: number; since: number }>()
 
-export function isLockedOut(ip: string) {
-  const a = attempts.get(ip)
+export function isLockedOut(key: string) {
+  const a = attempts.get(key)
   if (!a) return false
   if (Date.now() - a.since > LOCKOUT_MS) {
-    attempts.delete(ip)
+    attempts.delete(key)
     return false
   }
   return a.count >= MAX_ATTEMPTS
 }
 
-export function recordFailure(ip: string) {
-  const a = attempts.get(ip)
-  if (!a || Date.now() - a.since > LOCKOUT_MS) attempts.set(ip, { count: 1, since: Date.now() })
+export function recordFailure(key: string) {
+  const a = attempts.get(key)
+  if (!a || Date.now() - a.since > LOCKOUT_MS) attempts.set(key, { count: 1, since: Date.now() })
   else a.count++
 }
 
-export function clearFailures(ip: string) {
-  attempts.delete(ip)
+export function clearFailures(key: string) {
+  attempts.delete(key)
 }

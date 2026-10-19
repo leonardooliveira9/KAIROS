@@ -1,13 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
-import { isAdminRequest } from "@/lib/server/auth"
+import { requireRole, sameOrigin } from "@/lib/server/auth"
 import { getOrder, listOrders, updateOrder, type Order } from "@/lib/server/orders-store"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  const auth = requireRole(request, "admin")
+  if (auth instanceof NextResponse) return auth
   return NextResponse.json({ orders: listOrders() })
 }
 
@@ -18,7 +19,9 @@ const patchSchema = z.object({
 })
 
 export async function PATCH(request: NextRequest) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
+  if (!sameOrigin(request)) return NextResponse.json({ error: "Origem inválida" }, { status: 403 })
+  const auth = requireRole(request, "admin")
+  if (auth instanceof NextResponse) return auth
 
   const parsed = patchSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
