@@ -18,7 +18,7 @@ export function AdminNav({ name }: { name: string }) {
 
   const signOut = async () => {
     await logout()
-    router.replace("/entrar")
+    router.replace("/")
     router.refresh()
   }
 

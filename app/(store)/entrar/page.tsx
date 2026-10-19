@@ -3,12 +3,14 @@ import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import { AuthForm } from "@/components/auth/auth-form"
 import { currentUser } from "@/lib/server/auth"
+import { safeNext } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Entrar", robots: { index: false } }
 export const dynamic = "force-dynamic"
 
-export default async function EntrarPage() {
-  if (await currentUser()) redirect("/conta")
+export default async function EntrarPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  // já logado: segue para o destino pedido (ou o padrão)
+  if (await currentUser()) redirect(safeNext((await searchParams).next, "/"))
   return (
     <section className="container-k py-14 sm:py-20">
       <Suspense>

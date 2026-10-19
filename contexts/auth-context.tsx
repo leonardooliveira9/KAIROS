@@ -67,9 +67,3 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth deve ser usado dentro de AuthProvider")
   return ctx
 }
-
-/** Aceita só caminhos internos em ?next= (evita redirecionar para outro site) */
-export function safeNext(next: string | null | undefined, fallback = "/conta") {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return fallback
-  return next
-}

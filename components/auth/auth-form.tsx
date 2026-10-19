@@ -5,15 +5,17 @@ import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { Field } from "@/components/checkout/field"
-import { safeNext, useAuth, type SessionUser } from "@/contexts/auth-context"
+import { useAuth, type SessionUser } from "@/contexts/auth-context"
 import { firebaseConfigured } from "@/lib/firebase-client"
+import { safeNext } from "@/lib/utils"
 import { GoogleButton } from "./google-button"
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter()
   const params = useSearchParams()
   const { setUser } = useAuth()
-  const next = safeNext(params.get("next"))
+  // login volta à página inicial; conta nova vai a /conta, onde confirma e-mail e celular
+  const next = safeNext(params.get("next"), mode === "login" ? "/" : "/conta")
   const [form, setForm] = useState({ name: "", email: "", password: "" })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
@@ -29,9 +31,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   const finish = (user: SessionUser) => {
     setUser(user)
-    // admin que entra sem destino definido vai direto ao painel
-    const destination = !params.get("next") && user.role === "admin" ? "/admin" : next
-    router.replace(destination)
+    router.replace(next)
     router.refresh()
   }
 
