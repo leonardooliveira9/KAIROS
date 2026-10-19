@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server"
+import { after, NextResponse, type NextRequest } from "next/server"
 import { forgotPasswordSchema } from "@/lib/validation"
 import { findUserByEmail } from "@/lib/server/users-store"
 import { clientIp, sameOrigin } from "@/lib/server/auth"
@@ -25,8 +25,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Muitos pedidos de redefinição. Tente novamente em 1 hora." }, { status: 429 })
   }
 
-  const user = findUserByEmail(email)
+  const user = await findUserByEmail(email)
   // não espera o envio: o tempo de resposta não pode denunciar se a conta existe
-  if (user) void sendPasswordResetEmail(request, user)
+  // after(): o envio continua depois da resposta (na Vercel, sem isso a função pode ser encerrada antes)
+  if (user) after(() => sendPasswordResetEmail(request, user))
   return NextResponse.json(GENERIC)
 }

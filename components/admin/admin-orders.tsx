@@ -28,7 +28,7 @@ interface Order {
   status: Status
   customer: { fullName: string; email: string; phone: string; cpf: string }
   address: { cep: string; street: string; number: string; complement: string; neighborhood: string; city: string; state: string; notes: string }
-  items: { slug: string; name: string; price: number; quantity: number }[]
+  items: { slug: string; name: string; price: number; quantity: number; details?: string }[]
   subtotal: number
   shipping: number
   total: number
@@ -282,10 +282,11 @@ function OrderDetail({ order, onUpdate }: { order: Order; onUpdate: (id: string,
       </section>
 
       <ul className="mt-4 space-y-2 text-sm">
-        {order.items.map((i) => (
-          <li key={i.slug} className="flex justify-between">
+        {order.items.map((i, idx) => (
+          <li key={`${i.slug}-${idx}`} className="flex justify-between gap-3">
             <span>
               {i.quantity}× {i.name}
+              {i.details && <span className="block text-xs text-muted-foreground">{i.details}</span>}
             </span>
             <span>{formatBRL(i.price * i.quantity)}</span>
           </li>

@@ -31,7 +31,7 @@ export function createSessionToken(user: User) {
 }
 
 /** Valida o token e devolve o usuário atual (o papel é lido do cadastro, nunca do cookie) */
-export function userFromToken(token: string | undefined): User | null {
+export async function userFromToken(token: string | undefined): Promise<User | null> {
   if (!token) return null
   const [payload, signature] = token.split(".")
   if (!payload || !signature) return null
@@ -41,7 +41,7 @@ export function userFromToken(token: string | undefined): User | null {
     if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return null
     const { uid, v, exp } = JSON.parse(Buffer.from(payload, "base64url").toString())
     if (typeof exp !== "number" || exp < Date.now()) return null
-    const user = getUser(uid)
+    const user = await getUser(uid)
     if (!user || user.sessionVersion !== v) return null
     return user
   } catch {
@@ -77,10 +77,10 @@ export async function currentUser() {
 
 /**
  * Exige login (e opcionalmente um papel) numa rota de API.
- * Uso: const auth = requireRole(request, "admin"); if (auth instanceof NextResponse) return auth
+ * Uso: const auth = await requireRole(request, "admin"); if (auth instanceof NextResponse) return auth
  */
-export function requireRole(request: NextRequest, role?: Role) {
-  const user = requestUser(request)
+export async function requireRole(request: NextRequest, role?: Role) {
+  const user = await requestUser(request)
   if (!user) return NextResponse.json({ error: "Faça login para continuar." }, { status: 401 })
   if (role && user.role !== role) return NextResponse.json({ error: "Sem permissão." }, { status: 403 })
   return user

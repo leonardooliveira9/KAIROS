@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   }
 
   // incrementa sessionVersion: todas as sessões abertas (inclusive a de quem invadiu) caem
-  const user = resetPasswordWithToken(parsed.data.token, parsed.data.password)
+  const user = await resetPasswordWithToken(parsed.data.token, parsed.data.password)
   if (!user) {
     return NextResponse.json({ error: "Link inválido ou expirado. Peça um novo em Esqueci minha senha." }, { status: 400 })
   }

@@ -6,8 +6,8 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
-  const auth = requireRole(request)
+  const auth = await requireRole(request)
   if (auth instanceof NextResponse) return auth
-  const orders = listOrdersForUser(auth.id, auth.emailVerifiedAt ? auth.email : undefined)
+  const orders = await listOrdersForUser(auth.id, auth.emailVerifiedAt ? auth.email : undefined)
   return NextResponse.json({ orders: orders.map(publicOrder) })
 }

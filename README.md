@@ -18,6 +18,7 @@ Abra http://localhost:3000. O arquivo `.env.local` (não versionado) já tem uma
 | Produtos, fotos, textos e especificações | `lib/products.ts` |
 | Preço, frete, chave PIX, WhatsApp, Instagram | `lib/store-config.ts` |
 | Depoimentos (substitua pelos reais!) | `lib/testimonials.ts` |
+| Terço personalizado: cores, cruzes, medalhas, preço do nome | `lib/customizer.ts` |
 | Cores e tema | `app/globals.css` |
 
 ## Pagamento PIX
@@ -70,8 +71,8 @@ Há dois papéis: **cliente** (padrão) e **admin**.
 
 ## Antes de publicar
 
-1. **Banco de dados**: os pedidos ficam em `.data/orders.json`. Isso funciona num servidor/VPS,
-   mas **na Vercel o disco não é persistente** — troque `lib/server/orders-store.ts` por Postgres/Supabase/Neon.
+1. **Banco de dados**: defina `DATABASE_URL` (MySQL/MariaDB) — obrigatório na Vercel, senão as contas e os pedidos
+   se perdem e o login cai. Sem ela, os dados ficam em `.data/*.json` (bom só para desenvolvimento/VPS).
 2. Substitua os depoimentos de exemplo em `lib/testimonials.ts` por depoimentos reais.
 3. Confirme se os modelos "Madeira Nobre" e "Pérola Suave" existem (ou marque `available: false`).
 4. Configure as variáveis de `.env.example`.

@@ -19,7 +19,7 @@ interface AccountOrder {
   status: "awaiting_payment" | "paid" | "shipped" | "canceled"
   createdAt: string
   trackingCode: string | null
-  items: { slug: string; name: string; quantity: number; price: number; image: string }[]
+  items: { slug: string; name: string; quantity: number; price: number; image: string; details?: string }[]
   total: number
 }
 
@@ -205,10 +205,13 @@ function OrdersTab() {
             </span>
           </div>
           <ul className="mt-4 flex flex-wrap gap-3">
-            {o.items.map((i) => (
-              <li key={i.slug} className="flex items-center gap-2.5 rounded-xl bg-secondary/60 p-2 pr-4 text-sm">
+            {o.items.map((i, idx) => (
+              <li key={`${i.slug}-${idx}`} className="flex items-center gap-2.5 rounded-xl bg-secondary/60 p-2 pr-4 text-sm">
                 <Image src={i.image} alt="" width={40} height={40} className="size-10 rounded-lg object-cover" />
-                {i.quantity}× {i.name}
+                <span>
+                  {i.quantity}× {i.name}
+                  {i.details && <span className="block text-xs text-muted-foreground">{i.details}</span>}
+                </span>
               </li>
             ))}
           </ul>

@@ -14,7 +14,7 @@ export const runtime = "nodejs"
  */
 export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return NextResponse.json({ error: "Origem inválida" }, { status: 403 })
-  const auth = requireRole(request)
+  const auth = await requireRole(request)
   if (auth instanceof NextResponse) return auth
   if (!firebaseEnabled()) return NextResponse.json({ error: "Verificação por SMS indisponível." }, { status: 503 })
   if (!takeRateLimit(`phone:ip:${clientIp(request)}`, 20, 60 * 60 * 1000)) {
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   const digits = brazilianDigits(phoneNumber)
   if (!digits) return NextResponse.json({ error: "Use um celular do Brasil (+55)." }, { status: 400 })
 
-  const result = markPhoneVerified(auth, digits)
+  const result = await markPhoneVerified(auth, digits)
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
   return NextResponse.json({ user: toPublicUser(result.user) })
 }

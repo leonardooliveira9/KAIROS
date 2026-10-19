@@ -13,15 +13,15 @@ export async function syncPayment(order: Order, { force = false } = {}): Promise
   const now = Date.now()
   if (!force && order.payment.lastCheckedAt && now - order.payment.lastCheckedAt < 4000) return order
 
-  updateOrder(order.id, { payment: { ...order.payment, lastCheckedAt: now } })
+  await updateOrder(order.id, { payment: { ...order.payment, lastCheckedAt: now } })
   try {
     const charge = await checkPixCharge(order.payment.chargeId)
-    if (PAID_STATUSES.has(charge.status)) return markPaid(order.id) ?? order
+    if (PAID_STATUSES.has(charge.status)) return (await markPaid(order.id)) ?? order
     if (charge.status === "EXPIRED" || charge.status === "CANCELLED") {
-      return updateOrder(order.id, { status: "canceled" }) ?? order
+      return (await updateOrder(order.id, { status: "canceled" })) ?? order
     }
   } catch (err) {
     console.error("[payment-sync]", order.id, err)
   }
-  return getOrder(order.id) ?? order
+  return (await getOrder(order.id)) ?? order
 }

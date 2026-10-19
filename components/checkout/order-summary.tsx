@@ -4,6 +4,8 @@ import { formatBRL, maskCEP, pluralize } from "@/lib/format"
 import { storeConfig } from "@/lib/store-config"
 
 export interface SummaryLine {
+  /** Identifica a linha (o personalizado pode aparecer mais de uma vez com escolhas diferentes) */
+  key: string
   slug: string
   name: string
   materials?: string
@@ -35,13 +37,13 @@ export function OrderSummary({
 
       <ul className="mt-5 space-y-3">
         {lines.map((l) => (
-          <li key={l.slug} className="flex gap-3 rounded-xl bg-secondary/60 p-2.5">
+          <li key={l.key} className="flex gap-3 rounded-xl bg-secondary/60 p-2.5">
             <div className="relative size-16 shrink-0 overflow-hidden rounded-lg">
               <Image src={l.image} alt="" fill sizes="64px" className="object-cover" />
             </div>
             <div className="min-w-0 flex-1 text-sm">
               <p className="truncate font-medium">{l.name}</p>
-              {l.materials && <p className="truncate text-xs text-muted-foreground">{l.materials}</p>}
+              {l.materials && <p className="line-clamp-2 text-xs text-muted-foreground">{l.materials}</p>}
               <div className="mt-1.5 flex justify-between text-xs">
                 <span className="text-muted-foreground">Qtd: {l.quantity} un.</span>
                 <span className="text-sm">{formatBRL(l.price * l.quantity)}</span>

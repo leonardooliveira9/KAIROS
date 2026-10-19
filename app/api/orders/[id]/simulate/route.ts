@@ -9,7 +9,7 @@ export const runtime = "nodejs"
 // PIX estático: bloqueado em produção. AbacatePay: só funciona com chave sandbox (devMode).
 export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const order = getOrder(id)
+  const order = await getOrder(id)
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 })
 
   if (order.payment.provider === "abacatepay") {
@@ -28,6 +28,6 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json({ error: "Simulação indisponível" }, { status: 403 })
   }
-  const updated = markPaid(id)
+  const updated = await markPaid(id)
   return NextResponse.json({ status: updated?.status })
 }

@@ -7,9 +7,9 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest) {
-  const auth = requireRole(request, "admin")
+  const auth = await requireRole(request, "admin")
   if (auth instanceof NextResponse) return auth
-  return NextResponse.json({ orders: listOrders() })
+  return NextResponse.json({ orders: await listOrders() })
 }
 
 const patchSchema = z.object({
@@ -20,14 +20,14 @@ const patchSchema = z.object({
 
 export async function PATCH(request: NextRequest) {
   if (!sameOrigin(request)) return NextResponse.json({ error: "Origem inválida" }, { status: 403 })
-  const auth = requireRole(request, "admin")
+  const auth = await requireRole(request, "admin")
   if (auth instanceof NextResponse) return auth
 
   const parsed = patchSchema.safeParse(await request.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: "Dados inválidos" }, { status: 400 })
   const { orderId, status, trackingCode } = parsed.data
 
-  const order = getOrder(orderId)
+  const order = await getOrder(orderId)
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 })
 
   const patch: Partial<Order> = {}
@@ -42,5 +42,5 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ order: updateOrder(orderId, patch) })
+  return NextResponse.json({ order: await updateOrder(orderId, patch) })
 }

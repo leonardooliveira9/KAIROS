@@ -7,6 +7,7 @@ import { Logo } from "./logo"
 const navigation = [
   { href: "/", label: "Início" },
   { href: "/produtos", label: "Catálogo de Terços" },
+  { href: "/personalizar", label: "Monte seu Terço" },
   { href: "/sobre", label: "Nossa História" },
   { href: "/contato", label: "Contato & Apoio" },
 ]

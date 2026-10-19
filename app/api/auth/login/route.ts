@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Muitas tentativas. Tente novamente em 15 minutos." }, { status: 429 })
   }
 
-  const user = findUserByEmail(email)
+  const user = await findUserByEmail(email)
   // verifyPassword gasta o mesmo tempo mesmo se o e-mail não existir
   if (!verifyPassword(password, user?.passwordHash) || !user) {
     recordFailure(ipKey)

@@ -3,8 +3,8 @@ import type { NextRequest } from "next/server"
 import { issueToken, type User } from "./users-store"
 import { sendActionEmail, siteUrl } from "./mailer"
 
-export function sendVerificationEmail(request: NextRequest, user: User) {
-  const token = issueToken(user.id, "verify")
+export async function sendVerificationEmail(request: NextRequest, user: User) {
+  const token = await issueToken(user.id, "verify")
   return sendActionEmail({
     to: user.email,
     subject: "Confirme seu e-mail — Kairos",
@@ -15,8 +15,8 @@ export function sendVerificationEmail(request: NextRequest, user: User) {
   })
 }
 
-export function sendPasswordResetEmail(request: NextRequest, user: User) {
-  const token = issueToken(user.id, "reset")
+export async function sendPasswordResetEmail(request: NextRequest, user: User) {
+  const token = await issueToken(user.id, "reset")
   return sendActionEmail({
     to: user.email,
     subject: "Redefinir sua senha — Kairos",

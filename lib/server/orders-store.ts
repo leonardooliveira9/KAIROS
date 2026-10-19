@@ -1,7 +1,7 @@
 import "server-only"
 import crypto from "crypto"
-import fs from "fs"
-import path from "path"
+import type { CustomRosary } from "@/lib/customizer"
+import { allDocs, findDocs, getDoc, putDoc } from "./db"
 
 export type OrderStatus = "awaiting_payment" | "paid" | "shipped" | "canceled"
 
@@ -11,6 +11,9 @@ export interface OrderItem {
   price: number
   quantity: number
   image: string
+  /** Terço personalizado: escolhas e o resumo legível delas */
+  custom?: CustomRosary
+  details?: string
 }
 
 export interface Order {
@@ -47,38 +50,7 @@ export interface Order {
   trackingCode?: string
 }
 
-/*
- * Armazenamento simples: memória + arquivo JSON (DATA_DIR, padrão ".data").
- * Funciona em servidor próprio/VPS e em desenvolvimento.
- * TODO: na Vercel o disco não é persistente — troque por um banco (Postgres/Supabase/Neon)
- * implementando as mesmas funções abaixo.
- */
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), ".data")
-const FILE = path.join(DATA_DIR, "orders.json")
-
-type Store = { orders: Map<string, Order>; loaded: boolean }
-const g = globalThis as unknown as { __kairosOrders?: Store }
-const store: Store = (g.__kairosOrders ??= { orders: new Map(), loaded: false })
-
-function load() {
-  if (store.loaded) return
-  store.loaded = true
-  try {
-    const raw = fs.readFileSync(FILE, "utf8")
-    for (const order of JSON.parse(raw) as Order[]) store.orders.set(order.id, order)
-  } catch {
-    // primeiro uso ou disco indisponível
-  }
-}
-
-function persist() {
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true })
-    fs.writeFileSync(FILE, JSON.stringify([...store.orders.values()], null, 2))
-  } catch (err) {
-    console.warn("[orders] não foi possível gravar em disco; pedidos ficam só na memória", err)
-  }
-}
+// Guardado pelo módulo db: MySQL (DATABASE_URL) ou arquivo JSON local em desenvolvimento
 
 export function newOrderId() {
   // 8 caracteres sem ambiguidades (sem 0/O, 1/I) — difícil de adivinhar
@@ -90,40 +62,31 @@ export function newOrderId() {
 }
 
 export function saveOrder(order: Order) {
-  load()
-  store.orders.set(order.id, order)
-  persist()
-  return order
+  return putDoc("orders", order)
 }
 
 export function getOrder(id: string) {
-  load()
-  return store.orders.get(id)
+  return getDoc<Order>("orders", id)
 }
 
 export function listOrders() {
-  load()
-  return [...store.orders.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return allDocs<Order>("orders")
 }
 
-export function updateOrder(id: string, patch: Partial<Order>) {
-  const order = getOrder(id)
+export async function updateOrder(id: string, patch: Partial<Order>) {
+  const order = await getOrder(id)
   if (!order) return undefined
-  const updated = { ...order, ...patch }
-  store.orders.set(id, updated)
-  persist()
-  return updated
+  return putDoc("orders", { ...order, ...patch })
 }
 
-export function markPaid(id: string) {
-  const order = getOrder(id)
+export async function markPaid(id: string) {
+  const order = await getOrder(id)
   if (!order || order.status !== "awaiting_payment") return order
   return updateOrder(id, { status: "paid", paidAt: new Date().toISOString() })
 }
 
-export function findByChargeId(chargeId: string) {
-  load()
-  return [...store.orders.values()].find((o) => o.payment.chargeId === chargeId)
+export async function findByChargeId(chargeId: string) {
+  return (await findDocs<Order>("orders", "payment.chargeId", chargeId))[0]
 }
 
 /** Dados que podem ser mostrados ao cliente (sem CPF, telefone ou endereço completo) */
@@ -149,10 +112,9 @@ export function publicOrder(order: Order) {
  * o e-mail da conta foi verificado (`verifiedEmail`) — senão alguém poderia se cadastrar com o
  * e-mail de outra pessoa e ver as compras dela.
  */
-export function listOrdersForUser(userId: string, verifiedEmail?: string) {
-  load()
+export async function listOrdersForUser(userId: string, verifiedEmail?: string) {
   const email = verifiedEmail?.trim().toLowerCase()
-  return [...store.orders.values()]
-    .filter((o) => o.userId === userId || (!o.userId && !!email && o.customer.email.toLowerCase() === email))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const mine = await findDocs<Order>("orders", "userId", userId)
+  const guest = email ? (await findDocs<Order>("orders", "customer.email", email)).filter((o) => !o.userId) : []
+  return [...mine, ...guest].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }

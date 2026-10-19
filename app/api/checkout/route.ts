@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import QRCode from "qrcode"
 import { checkoutSchema, fieldErrors } from "@/lib/validation"
 import { getProduct } from "@/lib/products"
+import { CUSTOM_SLUG, customKey, customPrice, describeCustom, parseCustom } from "@/lib/customizer"
 import { shippingFor, storeConfig } from "@/lib/store-config"
 import { buildStaticPix } from "@/lib/pix-brcode"
 import { newOrderId, saveOrder, type Order, type OrderItem } from "@/lib/server/orders-store"
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Compra exige conta com e-mail e telefone confirmados
-  const user = requestUser(request)
+  const user = await requestUser(request)
   if (!user) {
     return NextResponse.json({ error: "Entre na sua conta para finalizar a compra.", code: "login_required" }, { status: 401 })
   }
@@ -52,16 +53,32 @@ export async function POST(request: NextRequest) {
   const { customer, address, items } = parsed.data
 
   // O preço SEMPRE vem do catálogo do servidor, nunca do navegador
-  const merged = new Map<string, number>()
-  for (const i of items) merged.set(i.slug, Math.min(20, (merged.get(i.slug) ?? 0) + i.quantity))
-  const orderItems: OrderItem[] = []
-  for (const [slug, quantity] of merged) {
-    const product = getProduct(slug)
-    if (!product) {
-      return NextResponse.json({ error: "Um dos itens da sacola não está mais disponível." }, { status: 400 })
+  const merged = new Map<string, OrderItem>()
+  for (const i of items) {
+    let item: Omit<OrderItem, "quantity">
+    if (i.slug === CUSTOM_SLUG) {
+      const custom = parseCustom(i.custom)
+      if (!custom) return NextResponse.json({ error: "Confira as escolhas do terço personalizado." }, { status: 400 })
+      item = {
+        slug: CUSTOM_SLUG,
+        name: "Terço Personalizado",
+        price: customPrice(custom),
+        image: "/artisan-hands-crafting-rosary-beads-workshop.jpg",
+        custom,
+        details: describeCustom(custom),
+      }
+    } else {
+      const product = getProduct(i.slug)
+      if (!product) {
+        return NextResponse.json({ error: "Um dos itens da sacola não está mais disponível." }, { status: 400 })
+      }
+      item = { slug: i.slug, name: product.name, price: product.price, image: product.images[0] }
     }
-    orderItems.push({ slug, name: product.name, price: product.price, quantity, image: product.images[0] })
+    const key = item.custom ? customKey(item.custom) : item.slug
+    const quantity = Math.min(20, (merged.get(key)?.quantity ?? 0) + i.quantity)
+    merged.set(key, { ...item, quantity })
   }
+  const orderItems = [...merged.values()]
   const quantity = orderItems.reduce((s, i) => s + i.quantity, 0)
   const subtotal = orderItems.reduce((s, i) => s + i.price * i.quantity, 0)
   const shipping = shippingFor(quantity)
@@ -112,9 +129,9 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (!user.cpf) updateUser(user.id, { cpf: customer.cpf })
+  if (!user.cpf) await updateUser(user.id, { cpf: customer.cpf })
 
-  saveOrder({
+  await saveOrder({
     id,
     userId: user.id,
     createdAt: new Date().toISOString(),

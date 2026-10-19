@@ -1,5 +1,6 @@
 "use client"
 
+import { NAME_PRICE } from "@/lib/customizer"
 import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -50,7 +51,7 @@ export function CartSheet() {
               )}
             </div>
             <SheetDescription className="text-[13px]">
-              Preço único: {formatBRL(storeConfig.unitPrice)} por peça
+              {formatBRL(storeConfig.unitPrice)} por peça • nome gravado +{formatBRL(NAME_PRICE)}
             </SheetDescription>
           </div>
           <button
@@ -104,10 +105,10 @@ export function CartSheet() {
               </div>
 
               <ul className="space-y-3">
-                {lines.map(({ product, quantity, lineTotal }) => (
-                  <li key={product.slug} className="flex gap-4 rounded-xl border border-border/60 bg-card p-3">
+                {lines.map(({ key, product, quantity, lineTotal, custom }) => (
+                  <li key={key} className="flex gap-4 rounded-xl border border-border/60 bg-card p-3">
                     <Link
-                      href={`/produtos/${product.slug}`}
+                      href={custom ? "/personalizar" : `/produtos/${product.slug}`}
                       onClick={() => setCartOpen(false)}
                       className="relative size-20 shrink-0 overflow-hidden rounded-lg bg-secondary"
                     >
@@ -118,16 +119,16 @@ export function CartSheet() {
                         <p className="font-serif text-[17px] leading-tight">{product.name}</p>
                         <button
                           type="button"
-                          onClick={() => removeItem(product.slug)}
+                          onClick={() => removeItem(key)}
                           className="text-muted-foreground transition-colors hover:text-destructive"
                           aria-label={`Remover ${product.name}`}
                         >
                           <Trash2 className="size-4" />
                         </button>
                       </div>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">{product.materials}</p>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{product.materials}</p>
                       <div className="mt-auto flex items-center justify-between pt-2">
-                        <QuantityStepper value={quantity} onChange={(q) => setQuantity(product.slug, q)} min={0} />
+                        <QuantityStepper value={quantity} onChange={(q) => setQuantity(key, q)} min={0} />
                         <span className="font-serif text-lg">{formatBRL(lineTotal)}</span>
                       </div>
                     </div>

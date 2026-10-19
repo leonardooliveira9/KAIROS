@@ -7,7 +7,7 @@ export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return NextResponse.json({ error: "Origem inválida" }, { status: 403 })
-  const auth = requireRole(request)
+  const auth = await requireRole(request)
   if (auth instanceof NextResponse) return auth
   if (auth.emailVerifiedAt) return NextResponse.json({ ok: true, alreadyVerified: true })
 

@@ -14,6 +14,7 @@ import { UserMenu, useAccountLinks } from "./user-menu"
 const links = [
   { href: "/", label: "Início" },
   { href: "/produtos", label: "Terços" },
+  { href: "/personalizar", label: "Personalize" },
   { href: "/sobre", label: "Sobre" },
   { href: "/contato", label: "Contato" },
 ]

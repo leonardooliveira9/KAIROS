@@ -48,7 +48,14 @@ export const checkoutSchema = z.object({
   customer: customerSchema,
   address: addressSchema,
   items: z
-    .array(z.object({ slug: z.string().min(1).max(80), quantity: z.number().int().min(1).max(20) }))
+    .array(
+      z.object({
+        slug: z.string().min(1).max(80),
+        quantity: z.number().int().min(1).max(20),
+        // escolhas do terço personalizado; conferidas por parseCustom no servidor
+        custom: z.unknown().optional(),
+      }),
+    )
     .min(1, "Sua sacola está vazia")
     .max(20),
 })

@@ -15,7 +15,7 @@ interface PublicOrder {
   trackingCode: string | null
   firstName: string
   city: string
-  items: { slug: string; name: string; quantity: number; price: number }[]
+  items: { slug: string; name: string; quantity: number; price: number; details?: string }[]
   total: number
 }
 
@@ -118,10 +118,11 @@ export function OrderTracker() {
           )}
 
           <ul className="mt-6 space-y-2 border-t border-border/70 pt-5 text-sm">
-            {order.items.map((i) => (
-              <li key={i.slug} className="flex justify-between">
+            {order.items.map((i, idx) => (
+              <li key={`${i.slug}-${idx}`} className="flex justify-between gap-3">
                 <span>
                   {i.quantity}× {i.name}
+                  {i.details && <span className="block text-xs text-muted-foreground">{i.details}</span>}
                 </span>
                 <span>{formatBRL(i.price * i.quantity)}</span>
               </li>

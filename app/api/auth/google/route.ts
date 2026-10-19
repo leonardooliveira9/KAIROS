@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     if (!claims.email || claims.email_verified !== true) {
       return NextResponse.json({ error: "Sua conta Google não tem e-mail verificado." }, { status: 400 })
     }
-    const user = upsertGoogleUser({ uid: claims.sub, email: claims.email, name: claims.name ?? "" })
+    const user = await upsertGoogleUser({ uid: claims.sub, email: claims.email, name: claims.name ?? "" })
     return setSessionCookie(NextResponse.json({ user: toPublicUser(user) }), user)
   } catch (err) {
     console.warn("[auth/google]", err instanceof Error ? err.message : err)

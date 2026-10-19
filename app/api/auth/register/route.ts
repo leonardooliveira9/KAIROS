@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server"
+import { after, NextResponse, type NextRequest } from "next/server"
 import { fieldErrors, registerSchema } from "@/lib/validation"
 import { createUser, toPublicUser } from "@/lib/server/users-store"
 import { clientIp, sameOrigin, setSessionCookie } from "@/lib/server/auth"
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Confira os dados.", fields: fieldErrors(parsed.error) }, { status: 400 })
   }
 
-  const user = createUser(parsed.data)
+  const user = await createUser(parsed.data)
   if (!user) {
     return NextResponse.json(
       { error: "Já existe uma conta com este e-mail.", fields: { email: "E-mail já cadastrado. Tente entrar." } },
@@ -36,6 +36,6 @@ export async function POST(request: NextRequest) {
   recent.push(now)
   hits.set(ip, recent)
   // envio em segundo plano: se falhar, o cliente pode pedir de novo em /conta
-  if (allowEmailSend("verify", ip, user.email)) void sendVerificationEmail(request, user)
+  if (allowEmailSend("verify", ip, user.email)) after(() => sendVerificationEmail(request, user))
   return setSessionCookie(NextResponse.json({ user: toPublicUser(user) }, { status: 201 }), user)
 }

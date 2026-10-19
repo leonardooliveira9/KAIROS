@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
   let updated = 0
   for (const id of ids) {
-    const order = id.startsWith("KRS-") ? getOrder(id) : findByChargeId(id)
+    const order = id.startsWith("KRS-") ? await getOrder(id) : await findByChargeId(id)
     if (!order) continue
     const synced = await syncPayment(order, { force: true })
     if (synced.status === "paid") updated++

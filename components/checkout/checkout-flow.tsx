@@ -61,6 +61,7 @@ export function CheckoutFlow() {
   const numberRef = useRef<HTMLInputElement>(null)
 
   const lines: SummaryLine[] = cart.lines.map((l) => ({
+    key: l.key,
     slug: l.slug,
     name: l.product.name,
     materials: l.product.materials,
@@ -161,7 +162,7 @@ export function CheckoutFlow() {
         body: JSON.stringify({
           customer,
           address,
-          items: cart.lines.map((l) => ({ slug: l.slug, quantity: l.quantity })),
+          items: cart.lines.map((l) => ({ slug: l.slug, quantity: l.quantity, custom: l.custom })),
         }),
       })
       const data = await res.json()
@@ -536,7 +537,7 @@ function SuccessScreen({
         </p>
         <ul className="mt-8 space-y-2 text-left text-sm">
           {lines.map((l) => (
-            <li key={l.slug} className="flex justify-between rounded-lg bg-secondary/60 px-4 py-2.5">
+            <li key={l.key} className="flex justify-between rounded-lg bg-secondary/60 px-4 py-2.5">
               <span>
                 {l.quantity}× {l.name}
               </span>

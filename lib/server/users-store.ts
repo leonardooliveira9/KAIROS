@@ -1,7 +1,6 @@
 import "server-only"
 import crypto from "crypto"
-import fs from "fs"
-import path from "path"
+import { allDocs, findDocs, getDoc, putDoc } from "./db"
 
 export type Role = "admin" | "customer"
 
@@ -40,35 +39,7 @@ type SecretField =
 
 export type PublicUser = Omit<User, SecretField> & { hasPassword: boolean; googleLinked: boolean }
 
-/*
- * Mesmo esquema dos pedidos: memória + arquivo JSON em DATA_DIR (padrão ".data").
- * TODO: na Vercel o disco não é persistente — mova para o mesmo banco dos pedidos.
- */
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), ".data")
-const FILE = path.join(DATA_DIR, "users.json")
-
-type Store = { users: Map<string, User>; loaded: boolean }
-const g = globalThis as unknown as { __kairosUsers?: Store }
-const store: Store = (g.__kairosUsers ??= { users: new Map(), loaded: false })
-
-function load() {
-  if (store.loaded) return
-  store.loaded = true
-  try {
-    for (const u of JSON.parse(fs.readFileSync(FILE, "utf8")) as User[]) store.users.set(u.id, u)
-  } catch {
-    // primeiro uso
-  }
-}
-
-function persist() {
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true })
-    fs.writeFileSync(FILE, JSON.stringify([...store.users.values()], null, 2))
-  } catch (err) {
-    console.warn("[users] não foi possível gravar em disco; contas ficam só na memória", err)
-  }
-}
+// Guardado pelo módulo db: MySQL (DATABASE_URL) ou arquivo JSON local em desenvolvimento
 
 /**
  * E-mails em ADMIN_EMAILS (separados por vírgula) viram admin ao se cadastrar — mas só enquanto
@@ -102,51 +73,40 @@ export function verifyPassword(password: string, stored: string | undefined) {
 }
 
 export function getUser(id: string) {
-  load()
-  return store.users.get(id)
+  return getDoc<User>("users", id)
 }
 
-export function findUserByEmail(email: string) {
-  load()
-  const e = email.trim().toLowerCase()
-  return [...store.users.values()].find((u) => u.email === e)
+export async function findUserByEmail(email: string) {
+  return (await findDocs<User>("users", "email", email.trim().toLowerCase()))[0]
 }
 
 export function listUsers() {
-  load()
-  return [...store.users.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return allDocs<User>("users")
 }
 
-export function createUser(input: { name: string; email: string; password: string }) {
-  load()
+export async function createUser(input: { name: string; email: string; password: string }) {
   const email = input.email.trim().toLowerCase()
-  if (findUserByEmail(email)) return null
+  if (await findUserByEmail(email)) return null
   const user: User = {
     id: `usr_${crypto.randomBytes(9).toString("base64url")}`,
     name: input.name.trim(),
     email,
     passwordHash: hashPassword(input.password),
-    role: countAdmins() === 0 && bootstrapAdmins().has(email) ? "admin" : "customer",
+    role: (await countAdmins()) === 0 && bootstrapAdmins().has(email) ? "admin" : "customer",
     createdAt: new Date().toISOString(),
     sessionVersion: 1,
   }
-  store.users.set(user.id, user)
-  persist()
-  return user
+  return putDoc("users", user)
 }
 
-export function updateUser(id: string, patch: Partial<Omit<User, "id" | "email" | "createdAt">>) {
-  const user = getUser(id)
+export async function updateUser(id: string, patch: Partial<Omit<User, "id" | "email" | "createdAt">>) {
+  const user = await getUser(id)
   if (!user) return undefined
-  const updated = { ...user, ...patch }
-  store.users.set(id, updated)
-  persist()
-  return updated
+  return putDoc("users", { ...user, ...patch })
 }
 
-export function countAdmins() {
-  load()
-  return [...store.users.values()].filter((u) => u.role === "admin").length
+export async function countAdmins() {
+  return (await findDocs<User>("users", "role", "admin")).length
 }
 
 export function toPublicUser(user: User): PublicUser {
@@ -168,14 +128,12 @@ export function isFullyVerified(user: User) {
   return Boolean(user.emailVerifiedAt && user.phoneVerifiedAt && user.phone)
 }
 
-export function findUserByGoogleUid(uid: string) {
-  load()
-  return [...store.users.values()].find((u) => u.googleUid === uid)
+export async function findUserByGoogleUid(uid: string) {
+  return (await findDocs<User>("users", "googleUid", uid))[0]
 }
 
-export function findUserByVerifiedPhone(phone: string) {
-  load()
-  return [...store.users.values()].find((u) => u.phone === phone && u.phoneVerifiedAt)
+export async function findUserByVerifiedPhone(phone: string) {
+  return (await findDocs<User>("users", "phone", phone)).find((u) => u.phoneVerifiedAt)
 }
 
 /**
@@ -186,23 +144,22 @@ export function findUserByVerifiedPhone(phone: string) {
  *   usando o e-mail alheio: a senha antiga é apagada e todas as sessões são encerradas;
  * - nenhuma conta: cria uma conta só-Google (sem senha).
  */
-export function upsertGoogleUser(input: { uid: string; email: string; name: string }) {
-  load()
+export async function upsertGoogleUser(input: { uid: string; email: string; name: string }) {
   const now = new Date().toISOString()
-  const byUid = findUserByGoogleUid(input.uid)
+  const byUid = await findUserByGoogleUid(input.uid)
   if (byUid) return byUid
 
   const email = input.email.trim().toLowerCase()
-  const existing = findUserByEmail(email)
+  const existing = await findUserByEmail(email)
   if (existing) {
     const wasVerified = Boolean(existing.emailVerifiedAt)
-    return updateUser(existing.id, {
+    return (await updateUser(existing.id, {
       googleUid: input.uid,
       emailVerifiedAt: existing.emailVerifiedAt ?? now,
       emailVerifyTokenHash: undefined,
       emailVerifyExpiresAt: undefined,
       ...(wasVerified ? {} : { passwordHash: "", sessionVersion: existing.sessionVersion + 1 }),
-    })!
+    }))!
   }
 
   const user: User = {
@@ -210,15 +167,13 @@ export function upsertGoogleUser(input: { uid: string; email: string; name: stri
     name: input.name.trim() || email.split("@")[0],
     email,
     passwordHash: "",
-    role: countAdmins() === 0 && bootstrapAdmins().has(email) ? "admin" : "customer",
+    role: (await countAdmins()) === 0 && bootstrapAdmins().has(email) ? "admin" : "customer",
     createdAt: now,
     sessionVersion: 1,
     googleUid: input.uid,
     emailVerifiedAt: now,
   }
-  store.users.set(user.id, user)
-  persist()
-  return user
+  return putDoc("users", user)
 }
 
 // --- Tokens de verificação de e-mail e de redefinição de senha ---------------
@@ -238,27 +193,25 @@ const fields = (purpose: TokenPurpose) =>
     : ({ hash: "passwordResetTokenHash", exp: "passwordResetExpiresAt" } as const)
 
 /** Gera um token novo (o anterior deixa de valer) e devolve o valor em claro para o link */
-export function issueToken(userId: string, purpose: TokenPurpose) {
+export async function issueToken(userId: string, purpose: TokenPurpose) {
   const token = crypto.randomBytes(32).toString("base64url")
   const f = fields(purpose)
-  updateUser(userId, { [f.hash]: hashToken(token), [f.exp]: Date.now() + TOKEN_TTL[purpose] })
+  await updateUser(userId, { [f.hash]: hashToken(token), [f.exp]: Date.now() + TOKEN_TTL[purpose] })
   return token
 }
 
 /** Usuário dono de um token ainda válido (não consome o token) */
-export function findByToken(token: string, purpose: TokenPurpose) {
+export async function findByToken(token: string, purpose: TokenPurpose) {
   if (!token || token.length > 200) return undefined
-  load()
   const f = fields(purpose)
-  const hash = hashToken(token)
-  const user = [...store.users.values()].find((u) => u[f.hash] === hash)
+  const [user] = await findDocs<User>("users", f.hash, hashToken(token))
   if (!user || (user[f.exp] ?? 0) < Date.now()) return undefined
   return user
 }
 
 /** Confirma o e-mail. Uso único: o token é apagado */
-export function consumeVerifyToken(token: string) {
-  const user = findByToken(token, "verify")
+export async function consumeVerifyToken(token: string) {
+  const user = await findByToken(token, "verify")
   if (!user) return undefined
   return updateUser(user.id, {
     emailVerifiedAt: user.emailVerifiedAt ?? new Date().toISOString(),
@@ -271,8 +224,8 @@ export function consumeVerifyToken(token: string) {
  * Troca a senha a partir do link de recuperação. Uso único; encerra todas as sessões.
  * Quem abriu o link provou ter acesso à caixa de entrada, então o e-mail também fica verificado.
  */
-export function resetPasswordWithToken(token: string, newPassword: string) {
-  const user = findByToken(token, "reset")
+export async function resetPasswordWithToken(token: string, newPassword: string) {
+  const user = await findByToken(token, "reset")
   if (!user) return undefined
   return updateUser(user.id, {
     passwordHash: hashPassword(newPassword),
