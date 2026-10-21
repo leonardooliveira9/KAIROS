@@ -185,6 +185,7 @@ export function VerificationCard({ className = "mt-6" }: { className?: string })
 
 function OrdersTab() {
   const router = useRouter()
+  const { refresh } = useAuth()
   const [orders, setOrders] = useState<AccountOrder[] | null>(null)
   const [error, setError] = useState(false)
   const previous = useRef<Map<string, AccountOrder["status"]>>(new Map())
@@ -193,7 +194,10 @@ function OrdersTab() {
     try {
       const res = await fetch("/api/account/orders", { cache: "no-store" })
       if (res.status === 401) {
-        router.replace("/entrar?next=/conta")
+        // a sessão caiu de fato: confere com o servidor antes de mandar para o login,
+        // senão /entrar (que vê o usuário logado) devolve para /conta e vira um loop
+        if (!(await refresh())) router.replace("/entrar?next=/conta")
+        else setError(true)
         return
       }
       if (!res.ok) throw new Error()
@@ -210,7 +214,7 @@ function OrdersTab() {
     } catch {
       setError(true)
     }
-  }, [router])
+  }, [router, refresh])
 
   useEffect(() => {
     load()

@@ -35,18 +35,20 @@ export async function userFromToken(token: string | undefined): Promise<User | n
   if (!token) return null
   const [payload, signature] = token.split(".")
   if (!payload || !signature) return null
+  let claims: { uid: string; v: number; exp: number }
   try {
     const expected = Buffer.from(sign(payload))
     const given = Buffer.from(signature)
     if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return null
-    const { uid, v, exp } = JSON.parse(Buffer.from(payload, "base64url").toString())
-    if (typeof exp !== "number" || exp < Date.now()) return null
-    const user = await getUser(uid)
-    if (!user || user.sessionVersion !== v) return null
-    return user
+    claims = JSON.parse(Buffer.from(payload, "base64url").toString())
   } catch {
     return null
   }
+  if (typeof claims.exp !== "number" || claims.exp < Date.now()) return null
+  // fora do try: falha do banco vira erro 500, não um "deslogado" falso (que causava loop de login)
+  const user = await getUser(claims.uid)
+  if (!user || user.sessionVersion !== claims.v) return null
+  return user
 }
 
 export function setSessionCookie(response: NextResponse, user: User) {
