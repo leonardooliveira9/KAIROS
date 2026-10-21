@@ -88,6 +88,11 @@ function fileTable(table: Table) {
   const files = (g.__kairosFiles ??= {})
   let docs = files[table]
   if (!docs) {
+    if (process.env.VERCEL) {
+      console.error(
+        "[db] DATABASE_URL não está definido na Vercel: contas e pedidos ficam só na memória de cada servidor e se perdem",
+      )
+    }
     docs = new Map()
     try {
       for (const d of JSON.parse(fs.readFileSync(path.join(DATA_DIR, `${table}.json`), "utf8")) as Doc[]) docs.set(d.id, d)
