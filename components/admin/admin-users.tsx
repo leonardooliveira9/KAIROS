@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, Search, ShieldCheck, UserRound, Users } from "lucide-react"
 import { toast } from "sonner"
@@ -25,17 +25,23 @@ export function AdminUsers() {
   const [query, setQuery] = useState("")
   const [busy, setBusy] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    const res = await fetch("/api/admin/users", { cache: "no-store" })
-    if (res.status === 401 || res.status === 403) return router.replace("/entrar?next=/admin/usuarios")
-    const data = await res.json()
-    setUsers(data.users)
-    setMe(data.currentUserId)
-  }, [router])
-
+  // carrega uma vez; o estado só muda quando a resposta chega
   useEffect(() => {
-    load()
-  }, [load])
+    let active = true
+    fetch("/api/admin/users", { cache: "no-store" })
+      .then(async (res) => {
+        if (!active) return
+        if (res.status === 401 || res.status === 403) return router.replace("/entrar?next=/admin/usuarios")
+        const data = await res.json()
+        if (!active) return
+        setUsers(data.users)
+        setMe(data.currentUserId)
+      })
+      .catch(() => toast.error("Não foi possível carregar os usuários"))
+    return () => {
+      active = false
+    }
+  }, [router])
 
   const changeRole = async (user: AdminUser, role: Role) => {
     const msg =

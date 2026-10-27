@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { ArrowLeft, ArrowRight, Check, Loader2, MessageCircle, ShoppingBag, UserRound, MapPin } from "lucide-react"
 import { toast } from "sonner"
 import { useCart } from "@/contexts/cart-context"
-import { isFullyVerified, useAuth } from "@/contexts/auth-context"
+import { isFullyVerified, useAuth, type SessionUser } from "@/contexts/auth-context"
 import { VerificationCard } from "@/components/auth/account-dashboard"
 import { GoogleButton } from "@/components/auth/google-button"
 import { customerSchema, addressSchema, fieldErrors, UFS } from "@/lib/validation"
@@ -24,6 +24,17 @@ const emptyCustomer = { fullName: "", email: "", phone: "", cpf: "" }
 const emptyAddress = { cep: "", street: "", number: "", complement: "", neighborhood: "", city: "", state: "", notes: "" }
 
 type Customer = typeof emptyCustomer
+
+/** Campos vindos da conta: e-mail e telefone são sempre os confirmados; nome e CPF só preenchem se vazios */
+function withAccount(c: Customer, user: SessionUser | null): Customer {
+  if (!user) return c
+  return {
+    fullName: c.fullName || user.name,
+    email: user.email,
+    phone: user.phone ? maskPhone(user.phone) : "",
+    cpf: c.cpf || (user.cpf ? maskCPF(user.cpf) : ""),
+  }
+}
 type Address = typeof emptyAddress
 type Errors = Record<string, string>
 
@@ -70,13 +81,15 @@ export function CheckoutFlow() {
     price: l.product.price,
   }))
 
-  // restaura rascunho e PIX pendente (ex.: cliente recarregou a página)
+  // restaura rascunho e PIX pendente (ex.: cliente recarregou a página).
+  // Leitura única do sessionStorage, que só existe no navegador e depois que a sacola carregou.
   useEffect(() => {
     if (!cart.hydrated || restored.current) return
     restored.current = true
     const draft = readSession<{ customer: Customer; address: Address }>(DRAFT_KEY)
     if (draft) {
-      setCustomer({ ...emptyCustomer, ...draft.customer })
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza com o sessionStorage uma única vez
+      setCustomer(withAccount({ ...emptyCustomer, ...draft.customer }, user))
       setAddress({ ...emptyAddress, ...draft.address })
     }
     const pending = readSession<PixInfo>(PENDING_KEY)
@@ -86,23 +99,18 @@ export function CheckoutFlow() {
     } else {
       writeSession(PENDING_KEY, null)
     }
-  }, [cart.hydrated, cart.total])
+  }, [cart.hydrated, cart.total, user])
 
   useEffect(() => {
     if (restored.current) writeSession(DRAFT_KEY, { customer, address })
   }, [customer, address])
 
-  // logado: preenche os campos vazios com os dados da conta
-  useEffect(() => {
-    if (!user) return
-    setCustomer((c) => ({
-      fullName: c.fullName || user.name,
-      // e-mail e telefone do pedido são sempre os confirmados na conta
-      email: user.email,
-      phone: user.phone ? maskPhone(user.phone) : "",
-      cpf: c.cpf || (user.cpf ? maskCPF(user.cpf) : ""),
-    }))
-  }, [user])
+  // logado (ou conta atualizada): preenche os campos com os dados da conta, durante o render
+  const [filledFor, setFilledFor] = useState<SessionUser | null>(null)
+  if (user && user !== filledFor) {
+    setFilledFor(user)
+    setCustomer((c) => withAccount(c, user))
+  }
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" })
@@ -191,7 +199,9 @@ export function CheckoutFlow() {
 
   // guarda os valores atuais da sacola para usar dentro do polling sem reiniciá-lo a cada render
   const latest = useRef({ lines, subtotal: cart.subtotal, shipping: cart.shipping, clear: cart.clear })
-  latest.current = { lines, subtotal: cart.subtotal, shipping: cart.shipping, clear: cart.clear }
+  useEffect(() => {
+    latest.current = { lines, subtotal: cart.subtotal, shipping: cart.shipping, clear: cart.clear }
+  })
 
   const finish = useCallback((orderId: string) => {
     const { lines, subtotal, shipping, clear } = latest.current
@@ -476,7 +486,12 @@ export function CheckoutFlow() {
                       <p className="font-serif text-xl">Não foi possível gerar o PIX</p>
                       <p className="mt-2 max-w-sm text-sm text-muted-foreground">{createError}</p>
                       <div className="mt-5 flex gap-3">
-                        <button type="button" onClick={() => setStep(Object.keys(errors).length ? 1 : 2)} className="rounded-full border border-border px-5 py-2.5 text-sm">
+                        <button
+                          type="button"
+                          // volta para a etapa do campo com erro: dados pessoais (1) ou endereço (2)
+                          onClick={() => setStep(Object.keys(errors).some((k) => errors[k] && k in emptyCustomer) ? 1 : 2)}
+                          className="rounded-full border border-border px-5 py-2.5 text-sm"
+                        >
                           Revisar dados
                         </button>
                         <button type="button" onClick={createPix} className="rounded-full bg-primary px-5 py-2.5 text-sm text-primary-foreground">

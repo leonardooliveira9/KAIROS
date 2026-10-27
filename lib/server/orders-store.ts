@@ -1,7 +1,8 @@
 import "server-only"
 import crypto from "crypto"
 import type { CustomRosary } from "@/lib/customizer"
-import { allDocs, findDocs, getDoc, putDoc } from "./db"
+import { allDocs, findDocs, getDoc, putDoc, replaceDocIf } from "./db"
+import { notifyOrder } from "./order-emails"
 
 export type OrderStatus = "awaiting_payment" | "paid" | "shipped" | "canceled"
 
@@ -48,6 +49,8 @@ export interface Order {
   paidAt?: string
   shippedAt?: string
   trackingCode?: string
+  /** Cancelado automaticamente porque o PIX venceu sem pagamento (vazio = cancelado pelo admin) */
+  canceledReason?: "payment_expired"
 }
 
 // Guardado pelo módulo db: MySQL (DATABASE_URL) ou arquivo JSON local em desenvolvimento
@@ -79,10 +82,28 @@ export async function updateOrder(id: string, patch: Partial<Order>) {
   return putDoc("orders", { ...order, ...patch })
 }
 
-export async function markPaid(id: string) {
+/**
+ * Aplica `patch` só se o pedido ainda estiver esperando pagamento. Conferência e gravação são
+ * atômicas: webhook e consultas simultâneas não confirmam o mesmo pagamento duas vezes nem
+ * desfazem um pagamento já confirmado. Devolve o pedido e se foi esta chamada que mudou.
+ */
+export async function updateIfAwaiting(id: string, patch: Partial<Order>) {
   const order = await getOrder(id)
-  if (!order || order.status !== "awaiting_payment") return order
-  return updateOrder(id, { status: "paid", paidAt: new Date().toISOString() })
+  if (!order || order.status !== "awaiting_payment") return { order, changed: false }
+  const next = { ...order, ...patch }
+  if (await replaceDocIf("orders", next, "status", "awaiting_payment")) return { order: next, changed: true }
+  return { order: await getOrder(id), changed: false }
+}
+
+export async function markPaid(id: string) {
+  const { order, changed } = await updateIfAwaiting(id, { status: "paid", paidAt: new Date().toISOString() })
+  if (changed && order) notifyOrder(order, "paid")
+  return order
+}
+
+/** PIX venceu: cancela só se o pedido ainda estiver esperando pagamento (não desfaz um pagamento já confirmado) */
+export async function markPaymentExpired(id: string) {
+  return (await updateIfAwaiting(id, { status: "canceled", canceledReason: "payment_expired" })).order
 }
 
 export async function findByChargeId(chargeId: string) {

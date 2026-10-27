@@ -57,6 +57,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]") as StoredItem[]
+      // leitura única do localStorage depois de montar (no servidor a sacola começa vazia, sem erro de hidratação)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setItems(
         saved
           .map((i) => (i.slug === CUSTOM_SLUG ? { ...i, custom: parseCustom(i.custom) ?? undefined } : i))

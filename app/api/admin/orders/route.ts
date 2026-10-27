@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireRole, sameOrigin } from "@/lib/server/auth"
 import { getOrder, listOrders, updateOrder, type Order } from "@/lib/server/orders-store"
+import { notifyOrder } from "@/lib/server/order-emails"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -34,6 +35,8 @@ export async function PATCH(request: NextRequest) {
   if (trackingCode !== undefined) patch.trackingCode = trackingCode || undefined
   if (status && status !== order.status) {
     patch.status = status
+    // mudança manual: o pedido deixa de ser um "PIX expirado" automático
+    patch.canceledReason = undefined
     const now = new Date().toISOString()
     if (status === "paid" && !order.paidAt) patch.paidAt = now
     if (status === "shipped") {
@@ -42,5 +45,14 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ order: await updateOrder(orderId, patch) })
+  const updated = await updateOrder(orderId, patch)
+  if (updated) {
+    // avisa o cliente: pagamento confirmado à mão, envio, ou rastreio informado depois do envio
+    if (patch.status === "paid") notifyOrder(updated, "paid")
+    else if (patch.status === "shipped") notifyOrder(updated, "shipped")
+    else if (updated.status === "shipped" && updated.trackingCode && updated.trackingCode !== order.trackingCode) {
+      notifyOrder(updated, "shipped")
+    }
+  }
+  return NextResponse.json({ order: updated })
 }
