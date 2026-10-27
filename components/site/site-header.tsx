@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { Menu, Moon, Search, ShoppingBag, Sun, X } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useCart } from "@/contexts/cart-context"
@@ -32,32 +32,39 @@ function IconButton({ className, ...props }: React.ComponentProps<"button">) {
   )
 }
 
+function subscribeScroll(onChange: () => void) {
+  window.addEventListener("scroll", onChange, { passive: true })
+  return () => window.removeEventListener("scroll", onChange)
+}
+
 export function SiteHeader() {
   const pathname = usePathname()
   const { totalItems, setCartOpen, hydrated } = useCart()
   const { resolvedTheme, setTheme } = useTheme()
   const [searchOpen, setSearchOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
+  const scrolled = useSyncExternalStore(subscribeScroll, () => window.scrollY > 8, () => false)
   const [bump, setBump] = useState(false)
   const accountLinks = useAccountLinks()
 
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8)
-    onScroll()
-    window.addEventListener("scroll", onScroll, { passive: true })
-    return () => window.removeEventListener("scroll", onScroll)
-  }, [])
+  // trocou de página: fecha o menu (ajuste feito durante o render, sem efeito extra)
+  const [menuPath, setMenuPath] = useState(pathname)
+  if (pathname !== menuPath) {
+    setMenuPath(pathname)
+    setMenuOpen(false)
+  }
 
-  useEffect(() => setMenuOpen(false), [pathname])
-
-  // pequeno "pulo" no contador quando um item entra na sacola
+  // pequeno "pulo" no contador quando a quantidade da sacola muda
+  const [seenTotal, setSeenTotal] = useState(totalItems)
+  if (totalItems !== seenTotal) {
+    setSeenTotal(totalItems)
+    if (hydrated && totalItems > 0) setBump(true)
+  }
   useEffect(() => {
-    if (!hydrated || totalItems === 0) return
-    setBump(true)
+    if (!bump) return
     const t = setTimeout(() => setBump(false), 350)
     return () => clearTimeout(t)
-  }, [totalItems, hydrated])
+  }, [bump])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

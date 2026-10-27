@@ -90,7 +90,8 @@ export function CartSheet() {
                     <Truck className="size-4 text-gold" />
                     {missingForFreeShipping > 0 ? (
                       <span>
-                        Falta apenas <strong>{formatBRL(missingForFreeShipping * storeConfig.unitPrice)}</strong> para{" "}
+                        {/* o frete grátis conta terços, não valor */}
+                        Falta apenas <strong>{pluralize(missingForFreeShipping, "terço", "terços")}</strong> para{" "}
                         <strong>Frete Grátis</strong>
                       </span>
                     ) : (

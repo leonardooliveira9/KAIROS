@@ -31,27 +31,40 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+/** Usuário da sessão atual (null se não estiver logado ou se a consulta falhar) */
+async function fetchSessionUser(): Promise<SessionUser | null> {
+  try {
+    const res = await fetch("/api/auth/me", { cache: "no-store" })
+    const data = await res.json()
+    return data.user ?? null
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/me", { cache: "no-store" })
-      const data = await res.json()
-      setUser(data.user)
-      return data.user as SessionUser | null
-    } catch {
-      setUser(null)
-      return null
-    } finally {
-      setLoading(false)
-    }
+    const current = await fetchSessionUser()
+    setUser(current)
+    setLoading(false)
+    return current
   }, [])
 
+  // sessão inicial: o estado só muda quando a resposta chega
   useEffect(() => {
-    refresh()
-  }, [refresh])
+    let active = true
+    fetchSessionUser().then((current) => {
+      if (!active) return
+      setUser(current)
+      setLoading(false)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => null)

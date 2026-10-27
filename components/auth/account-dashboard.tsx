@@ -189,10 +189,14 @@ function OrdersTab() {
   const [orders, setOrders] = useState<AccountOrder[] | null>(null)
   const [error, setError] = useState(false)
   const previous = useRef<Map<string, AccountOrder["status"]>>(new Map())
+  // polling e "PIX venceu" podem disparar cargas ao mesmo tempo: só a mais recente vale
+  const latest = useRef(0)
 
   const load = useCallback(async () => {
+    const seq = ++latest.current
     try {
       const res = await fetch("/api/account/orders", { cache: "no-store" })
+      if (seq !== latest.current) return
       if (res.status === 401) {
         // a sessão caiu de fato: confere com o servidor antes de mandar para o login,
         // senão /entrar (que vê o usuário logado) devolve para /conta e vira um loop
@@ -202,6 +206,7 @@ function OrdersTab() {
       }
       if (!res.ok) throw new Error()
       const data: { orders: AccountOrder[] } = await res.json()
+      if (seq !== latest.current) return
       // avisa quando um PIX pendente é confirmado com a página aberta
       for (const o of data.orders) {
         if (previous.current.get(o.id) === "awaiting_payment" && o.status === "paid") {
@@ -212,11 +217,13 @@ function OrdersTab() {
       setOrders(data.orders)
       setError(false)
     } catch {
-      setError(true)
+      if (seq === latest.current) setError(true)
     }
   }, [router, refresh])
 
   useEffect(() => {
+    // falso positivo: load só muda o estado depois do await (é a mesma função do intervalo de 10s)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load()
   }, [load])
 
@@ -277,9 +284,12 @@ function OrdersTab() {
   )
 }
 
-/** Status mostrado ao cliente: PIX pendente e vencido aparece como expirado */
+/**
+ * Status mostrado ao cliente: PIX vencido sem pagamento aparece como expirado — tanto o pendente
+ * quanto o que a sincronização com a AbacatePay já cancelou por vencimento.
+ */
 function displayStatus(o: AccountOrder): DisplayStatus {
-  return o.status === "awaiting_payment" && o.paymentExpired ? "expired" : o.status
+  return o.paymentExpired && !o.paidAt ? "expired" : o.status
 }
 
 function OrderCard({ order: o, onExpired }: { order: AccountOrder; onExpired: () => void }) {
@@ -417,6 +427,15 @@ function OrderPix({
     } catch {
       toast.error("Não foi possível copiar. Selecione o código e copie manualmente.")
     }
+  }
+
+  // venceu pelo relógio do navegador: não oferece mais um código que o banco vai recusar
+  if (expired) {
+    return (
+      <p className="mt-4 flex items-center gap-2 rounded-xl bg-card p-4 text-foreground">
+        <Loader2 className="size-4 animate-spin text-muted-foreground" /> O prazo deste PIX acabou. Atualizando o pedido…
+      </p>
+    )
   }
 
   return (

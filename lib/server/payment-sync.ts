@@ -1,6 +1,6 @@
 import "server-only"
 import { checkPixCharge, PAID_STATUSES } from "./abacatepay"
-import { getOrder, markPaid, updateOrder, type Order } from "./orders-store"
+import { getOrder, markPaid, markPaymentExpired, updateIfAwaiting, type Order } from "./orders-store"
 
 /**
  * Consulta a AbacatePay e atualiza o pedido. Nunca confia no navegador:
@@ -13,12 +13,13 @@ export async function syncPayment(order: Order, { force = false } = {}): Promise
   const now = Date.now()
   if (!force && order.payment.lastCheckedAt && now - order.payment.lastCheckedAt < 4000) return order
 
-  await updateOrder(order.id, { payment: { ...order.payment, lastCheckedAt: now } })
+  // grava só se ainda estiver pendente: uma consulta atrasada não pode desfazer um pagamento confirmado
+  await updateIfAwaiting(order.id, { payment: { ...order.payment, lastCheckedAt: now } })
   try {
     const charge = await checkPixCharge(order.payment.chargeId)
     if (PAID_STATUSES.has(charge.status)) return (await markPaid(order.id)) ?? order
     if (charge.status === "EXPIRED" || charge.status === "CANCELLED") {
-      return (await updateOrder(order.id, { status: "canceled" })) ?? order
+      return (await markPaymentExpired(order.id)) ?? order
     }
   } catch (err) {
     console.error("[payment-sync]", order.id, err)

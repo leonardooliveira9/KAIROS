@@ -7,8 +7,10 @@ export const metadata: Metadata = { title: "Confirmação de e-mail", robots: { 
 export const dynamic = "force-dynamic"
 
 export default async function VerificarEmailPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
-  const ok = (await searchParams).status === "ok"
-  const loggedIn = Boolean(await currentUser())
+  const user = await currentUser()
+  const loggedIn = Boolean(user)
+  // link já usado (ex.: antivírus do e-mail abriu antes), mas a conta logada já está confirmada
+  const ok = (await searchParams).status === "ok" || Boolean(user?.emailVerifiedAt)
 
   return (
     <section className="container-k py-14 sm:py-20">

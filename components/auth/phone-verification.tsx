@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { CheckCircle2, Loader2, MessageSquareText, Pencil } from "lucide-react"
 import type { ConfirmationResult, RecaptchaVerifier } from "firebase/auth"
 import { Field } from "@/components/checkout/field"
@@ -21,7 +21,8 @@ export function PhoneVerification({ compact = false }: { compact?: boolean }) {
   const [editing, setEditing] = useState(false)
   const confirmation = useRef<ConfirmationResult | null>(null)
   const verifier = useRef<RecaptchaVerifier | null>(null)
-  const containerId = useRef(`recaptcha-${Math.random().toString(36).slice(2)}`).current
+  // id estável e único para o contêiner do reCAPTCHA (sem caracteres especiais do useId)
+  const containerId = `recaptcha-${useId().replace(/[^a-zA-Z0-9]/g, "")}`
 
   useEffect(() => {
     if (cooldown <= 0) return

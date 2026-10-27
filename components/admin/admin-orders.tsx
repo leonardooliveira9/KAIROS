@@ -80,6 +80,8 @@ export function AdminOrders() {
   }, [router])
 
   useEffect(() => {
+    // falso positivo: load só muda o estado depois do await (é a mesma função do botão Atualizar e do intervalo)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load()
     const t = setInterval(load, 20000)
     return () => clearInterval(t)

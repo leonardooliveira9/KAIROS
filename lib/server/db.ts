@@ -1,7 +1,7 @@
 import "server-only"
 import fs from "fs"
 import path from "path"
-import type { Pool, RowDataPacket } from "mysql2/promise"
+import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise"
 
 /*
  * Armazenamento de documentos (contas e pedidos).
@@ -138,6 +138,26 @@ export async function putDoc<T extends Doc>(table: Table, doc: T): Promise<T> {
     [doc.id, doc.createdAt, JSON.stringify(doc)],
   )
   return doc
+}
+
+/**
+ * Substitui o documento só se `field` ainda tiver o valor `expected` no que está gravado.
+ * Devolve false se outro processo mudou o campo antes (ex.: webhook e consulta marcando o mesmo pagamento).
+ */
+export async function replaceDocIf<T extends Doc>(table: Table, doc: T, field: string, expected: string): Promise<boolean> {
+  if (!databaseEnabled()) {
+    // sem await entre a conferência e a gravação: atômico dentro do processo
+    const current = fileTable(table).get(doc.id)
+    if (!current || pick(current, field) !== expected) return false
+    fileTable(table).set(doc.id, doc)
+    persistFile(table)
+    return true
+  }
+  const [result] = await (await pool()).query<ResultSetHeader>(
+    `UPDATE ${table} SET data = ? WHERE id = ? AND JSON_UNQUOTE(JSON_EXTRACT(data, ?)) = ?`,
+    [JSON.stringify(doc), doc.id, `$.${field}`, expected],
+  )
+  return result.affectedRows > 0
 }
 
 /**
