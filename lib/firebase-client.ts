@@ -12,6 +12,18 @@ const config = {
 
 export const firebaseConfigured = Boolean(config.apiKey && config.projectId && config.authDomain)
 
+/**
+ * Com NEXT_PUBLIC_FIREBASE_AUTH_PROXY=true, o login usa o próprio domínio da loja
+ * (as rotas /__/auth são repassadas ao Firebase em next.config.mjs). Exige o endereço
+ * https://SEU-DOMINIO/__/auth/handler nos "URIs de redirecionamento autorizados" do
+ * cliente OAuth no Google Cloud. Em localhost continua usando o domínio do Firebase.
+ */
+function authDomain() {
+  const proxy = process.env.NEXT_PUBLIC_FIREBASE_AUTH_PROXY === "true"
+  const { hostname, host } = window.location
+  return proxy && hostname !== "localhost" && hostname !== "127.0.0.1" ? host : config.authDomain
+}
+
 let authPromise: Promise<Auth> | null = null
 
 /** Carrega o SDK só quando alguém usa Google/SMS — não pesa nas outras páginas */
@@ -19,7 +31,7 @@ export function getFirebaseAuth() {
   if (!firebaseConfigured) return Promise.reject(new Error("Firebase não configurado"))
   authPromise ??= (async () => {
     const [{ initializeApp, getApps }, { getAuth }] = await Promise.all([import("firebase/app"), import("firebase/auth")])
-    const app = getApps()[0] ?? initializeApp(config)
+    const app = getApps()[0] ?? initializeApp({ ...config, authDomain: authDomain() })
     const auth = getAuth(app)
     auth.languageCode = "pt-BR"
     return auth
