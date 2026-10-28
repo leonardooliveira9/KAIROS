@@ -45,10 +45,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(isLogin ? { email: form.email, password: form.password } : form),
       })
-      const data = await res.json()
+      // erro interno do servidor volta sem corpo: não deixa o JSON vazio virar mensagem técnica
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         setErrors(data.fields ?? {})
-        throw new Error(data.error)
+        throw new Error(data.error || "Erro no servidor. Tente de novo em instantes.")
       }
       finish(data.user)
     } catch (err) {

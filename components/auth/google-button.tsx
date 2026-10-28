@@ -40,8 +40,8 @@ export function GoogleButton({ onSuccess, label = "Continuar com Google" }: { on
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idToken }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Erro no servidor. Tente de novo em instantes.")
       onSuccess(data.user)
     } catch (err) {
       setError(err instanceof Error && !("code" in err) && err.message ? err.message : firebaseErrorMessage(err))
