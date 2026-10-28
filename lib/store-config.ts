@@ -14,7 +14,7 @@ export const storeConfig = {
   },
   shipping: {
     /** CEP de onde os pacotes são postados (origem do cálculo dos Correios). Só números. */
-    originCep: "",
+    originCep: "71691153", // Av. Comercial, 1161 - São Sebastião, Brasília - DF
     /** Dias para montar o terço antes de postar; somados ao prazo dos Correios */
     handlingDays: 2,
     /**
