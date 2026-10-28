@@ -5,16 +5,15 @@ import { notFound } from "next/navigation"
 import { ArrowRight, ChevronRight, ShieldCheck, ShoppingCart } from "lucide-react"
 import { ProductGallery } from "@/components/site/product-gallery"
 import { ProductPurchase } from "@/components/site/product-purchase"
-import { getProduct, products } from "@/lib/products"
+import { getProduct, listProducts, toProduct } from "@/lib/server/products-store"
 import { formatBRL } from "@/lib/format"
 
-export function generateStaticParams() {
-  return products.map((p) => ({ slug: p.slug }))
-}
+// o catálogo vem do banco e muda pelo admin
+export const dynamic = "force-dynamic"
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  const product = getProduct(slug)
+  const product = await getProduct(slug)
   if (!product) return {}
   return {
     title: product.name,
@@ -25,10 +24,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const product = getProduct(slug)
-  if (!product) notFound()
+  const stored = await getProduct(slug)
+  if (!stored) notFound()
+  const product = toProduct(stored)
 
-  const related = products.filter((p) => p.slug !== product.slug).slice(0, 2)
+  const related = (await listProducts())
+    .filter((p) => p.slug !== product.slug)
+    .slice(0, 2)
+    .map(toProduct)
 
   return (
     <>

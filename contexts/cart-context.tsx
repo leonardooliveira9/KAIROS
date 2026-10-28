@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import { getProduct, type Product } from "@/lib/products"
+import type { Product } from "@/lib/products"
 import { CUSTOM_SLUG, customKey, customProduct, parseCustom, type CustomRosary } from "@/lib/customizer"
 
 const STORAGE_KEY = "kairos-cart-v2"
@@ -22,16 +22,19 @@ export interface CartLine extends StoredItem {
 
 const keyOf = (i: StoredItem) => (i.custom ? customKey(i.custom) : i.slug)
 
-function productOf(i: StoredItem) {
+function productOf(i: StoredItem, catalog: Product[]) {
   if (i.slug === CUSTOM_SLUG) return i.custom ? customProduct(i.custom) : undefined
-  return getProduct(i.slug)
+  return catalog.find((p) => p.slug === i.slug)
 }
 
 interface CartContextType {
+  /** Produtos à venda (vêm do banco por /api/products) */
+  products: Product[]
   lines: CartLine[]
   totalItems: number
   /** Soma dos produtos; o frete é cotado pelo CEP no checkout */
   subtotal: number
+  /** Sacola lida do navegador e catálogo carregado */
   hydrated: boolean
   addItem: (slug: string, quantity?: number, openCart?: boolean) => void
   addCustom: (custom: CustomRosary, quantity?: number, openCart?: boolean) => void
@@ -47,8 +50,22 @@ const CartContext = createContext<CartContextType | undefined>(undefined)
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<StoredItem[]>([])
-  const [hydrated, setHydrated] = useState(false)
+  const [storageLoaded, setStorageLoaded] = useState(false)
+  const [catalog, setCatalog] = useState<Product[] | null>(null)
   const [isCartOpen, setCartOpen] = useState(false)
+  const hydrated = storageLoaded && catalog !== null
+
+  // catálogo atual; se falhar, a loja segue só com o terço personalizado
+  useEffect(() => {
+    let active = true
+    fetch("/api/products", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : { products: [] }))
+      .then((data: { products?: Product[] }) => active && setCatalog(data.products ?? []))
+      .catch(() => active && setCatalog([]))
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     try {
@@ -58,12 +75,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setItems(
         saved
           .map((i) => (i.slug === CUSTOM_SLUG ? { ...i, custom: parseCustom(i.custom) ?? undefined } : i))
-          .filter((i) => productOf(i) && i.quantity > 0),
+          .filter((i) => (i.slug !== CUSTOM_SLUG || i.custom) && i.quantity > 0),
       )
     } catch {
       // armazenamento indisponível: sacola começa vazia
     }
-    setHydrated(true)
+    setStorageLoaded(true)
   }, [])
 
   useEffect(() => {
@@ -109,13 +126,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const clear = useCallback(() => setItems([]), [])
 
   const value = useMemo<CartContextType>(() => {
+    const products = catalog ?? []
+    // produto que saiu do catálogo não aparece na sacola nem entra no total
     const lines = items.flatMap((i) => {
-      const product = productOf(i)
+      const product = productOf(i, products)
       return product ? [{ ...i, key: keyOf(i), product, lineTotal: product.price * i.quantity }] : []
     })
     const totalItems = lines.reduce((s, l) => s + l.quantity, 0)
     const subtotal = lines.reduce((s, l) => s + l.lineTotal, 0)
     return {
+      products,
       lines,
       totalItems,
       subtotal,
@@ -128,7 +148,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       isCartOpen,
       setCartOpen,
     }
-  }, [items, hydrated, addItem, addCustom, setQuantity, removeItem, clear, isCartOpen])
+  }, [items, catalog, hydrated, addItem, addCustom, setQuantity, removeItem, clear, isCartOpen])
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }

@@ -32,6 +32,8 @@ interface Order {
   subtotal: number
   shipping: number
   shippingMethod?: { name: string; days: number }
+  discount?: number
+  coupon?: { code: string; label: string }
   total: number
   payment: { provider: "abacatepay" | "static_pix" }
   paidAt?: string
@@ -298,6 +300,12 @@ function OrderDetail({ order, onUpdate }: { order: Order; onUpdate: (id: string,
           <span>Frete{order.shippingMethod ? ` ${order.shippingMethod.name}` : ""}</span>
           <span>{order.shipping === 0 ? "Grátis" : formatBRL(order.shipping)}</span>
         </li>
+        {order.coupon && (
+          <li className="flex justify-between text-gold-strong">
+            <span>Cupom {order.coupon.code}</span>
+            <span>− {formatBRL(order.discount ?? 0)}</span>
+          </li>
+        )}
         <li className="flex justify-between border-t border-border/70 pt-2 font-medium">
           <span>Total</span>
           <span>{formatBRL(order.total)}</span>

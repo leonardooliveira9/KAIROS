@@ -10,11 +10,12 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { products } from "@/lib/products"
+import { useCart } from "@/contexts/cart-context"
 import { formatBRL } from "@/lib/format"
 
 export function SearchDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter()
+  const { products } = useCart()
 
   const go = (href: string) => {
     onOpenChange(false)

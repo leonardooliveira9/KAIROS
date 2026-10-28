@@ -33,7 +33,11 @@ export const colorFilters: { id: ProductColor | "todos"; label: string }[] = [
 
 const price = storeConfig.unitPrice
 
-const allProducts: Product[] = [
+/**
+ * Catálogo inicial. Na primeira vez que a loja abre, estes produtos são copiados para o banco;
+ * depois disso, os produtos são editados em /admin/produtos (lib/server/products-store.ts).
+ */
+export const seedProducts: Product[] = [
   {
     slug: "terco-azul-sereno",
     name: "Terço Azul Sereno",
@@ -163,8 +167,5 @@ const allProducts: Product[] = [
   },
 ]
 
-export const products = allProducts.filter((p) => p.available)
-
-export function getProduct(slug: string) {
-  return products.find((p) => p.slug === slug)
-}
+/** Cores com filtro na loja (o produto guarda uma delas) */
+export const productColors = colorFilters.filter((f): f is { id: ProductColor; label: string } => f.id !== "todos")

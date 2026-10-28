@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowLeft, ArrowRight, Check, Loader2, MessageCircle, ShoppingBag, UserRound, MapPin } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, Loader2, MessageCircle, ShoppingBag, TicketPercent, UserRound, MapPin } from "lucide-react"
 import { toast } from "sonner"
 import { useCart } from "@/contexts/cart-context"
 import { isFullyVerified, useAuth, type SessionUser } from "@/contexts/auth-context"
@@ -12,6 +12,7 @@ import { customerSchema, addressSchema, fieldErrors, UFS } from "@/lib/validatio
 import { formatBRL, maskCEP, maskCPF, maskPhone, onlyDigits } from "@/lib/format"
 import { whatsappLink } from "@/lib/store-config"
 import { deliveryLabel, type ShippingQuote, type ShippingService } from "@/lib/shipping"
+import { couponDiscount, couponLabel, type PublicCoupon } from "@/lib/coupons"
 import { cn } from "@/lib/utils"
 import { CheckoutStepper } from "./stepper"
 import { Field } from "./field"
@@ -67,11 +68,22 @@ export function CheckoutFlow() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [simulating, setSimulating] = useState(false)
-  const [paid, setPaid] = useState<{ orderId: string; lines: SummaryLine[]; subtotal: number; shipping: PixInfo["shipping"] } | null>(null)
+  const [paid, setPaid] = useState<{
+    orderId: string
+    lines: SummaryLine[]
+    subtotal: number
+    shipping: PixInfo["shipping"]
+    discount: PixInfo["discount"]
+  } | null>(null)
   const [cepLoading, setCepLoading] = useState(false)
   // frete: cotado para o CEP + quantidade atuais; o serviço escolhido vale enquanto estiver na cotação
   const [quoteResult, setQuoteResult] = useState<{ key: string; quotes?: ShippingQuote[]; error?: string } | null>(null)
   const [service, setService] = useState<ShippingService | null>(null)
+  // cupom: conferido em /api/coupons; o servidor confere de novo ao gerar o PIX
+  const [couponInput, setCouponInput] = useState("")
+  const [coupon, setCoupon] = useState<PublicCoupon | null>(null)
+  const [couponError, setCouponError] = useState<string | null>(null)
+  const [couponLoading, setCouponLoading] = useState(false)
   const restored = useRef(false)
   const numberRef = useRef<HTMLInputElement>(null)
 
@@ -139,6 +151,32 @@ export function CheckoutFlow() {
   // padrão: a opção mais barata (a cotação vem ordenada por preço)
   const chosen = quotes.find((q) => q.service === service) ?? quotes[0] ?? null
   const chosenService = chosen?.service
+  const couponCode = coupon?.code ?? ""
+  // desconto mostrado antes do PIX; depois de gerado, vale o que o servidor calculou
+  const discount = pix ? pix.discount : coupon ? { code: coupon.code, amount: couponDiscount(coupon, cart.subtotal, chosen?.price ?? 0) } : null
+
+  const applyCoupon = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const code = couponInput.trim()
+    if (!code) return
+    setCouponLoading(true)
+    setCouponError(null)
+    try {
+      const res = await fetch("/api/coupons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, subtotal: cart.subtotal }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Cupom inválido.")
+      setCoupon(data.coupon)
+      setCouponInput("")
+    } catch (err) {
+      setCouponError(err instanceof Error ? err.message : "Cupom inválido.")
+    } finally {
+      setCouponLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (restored.current) writeSession(DRAFT_KEY, { customer, address })
@@ -211,6 +249,7 @@ export function CheckoutFlow() {
           address,
           items: cart.lines.map((l) => ({ slug: l.slug, quantity: l.quantity, custom: l.custom })),
           shippingService: chosenService,
+          couponCode,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -218,12 +257,18 @@ export function CheckoutFlow() {
         if (data.fields) setErrors(data.fields)
         // frete recusado (CEP mudou, serviço indisponível): cota de novo ao voltar para o endereço
         if (data.fields?.shippingService) setQuoteResult(null)
+        // cupom deixou de valer (expirou, esgotou): tira e mostra o motivo no campo do cupom
+        if (data.fields?.couponCode) {
+          setCoupon(null)
+          setCouponError(data.fields.couponCode)
+        }
         throw new Error(data.error || "Não foi possível gerar o PIX.")
       }
       const info: PixInfo = {
         orderId: data.orderId,
         subtotal: data.subtotal,
         shipping: { name: data.shippingMethod.name, price: data.shipping, days: data.shippingMethod.days },
+        discount: data.coupon ? { code: data.coupon.code, amount: data.discount } : null,
         total: data.total,
         payment: data.payment,
       }
@@ -234,7 +279,7 @@ export function CheckoutFlow() {
     } finally {
       setCreating(false)
     }
-  }, [customer, address, cart.lines, chosenService])
+  }, [customer, address, cart.lines, chosenService, couponCode])
 
   const goToPayment = (e: React.FormEvent) => {
     e.preventDefault()
@@ -251,15 +296,15 @@ export function CheckoutFlow() {
   }
 
   // guarda os valores atuais para usar dentro do polling sem reiniciá-lo a cada render
-  const latest = useRef({ lines, subtotal: cart.subtotal, shipping: pix?.shipping ?? null, clear: cart.clear })
+  const latest = useRef({ lines, subtotal: cart.subtotal, shipping: pix?.shipping ?? null, discount: pix?.discount ?? null, clear: cart.clear })
   useEffect(() => {
-    latest.current = { lines, subtotal: cart.subtotal, shipping: pix?.shipping ?? null, clear: cart.clear }
+    latest.current = { lines, subtotal: cart.subtotal, shipping: pix?.shipping ?? null, discount: pix?.discount ?? null, clear: cart.clear }
   })
 
   const finish = useCallback((orderId: string) => {
-    const { lines, subtotal, shipping, clear } = latest.current
+    const { lines, subtotal, shipping, discount, clear } = latest.current
     if (!shipping) return
-    setPaid({ orderId, lines, subtotal, shipping })
+    setPaid({ orderId, lines, subtotal, shipping, discount })
     writeSession(PENDING_KEY, null)
     writeSession(DRAFT_KEY, null)
     clear()
@@ -567,7 +612,8 @@ export function CheckoutFlow() {
                   <ArrowLeft className="size-4" /> Voltar
                 </button>
                 <button type="submit" className="inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-                  {chosen ? `Gerar PIX de ${formatBRL(cart.subtotal + chosen.price)}` : "Gerar PIX"} <ArrowRight className="size-4" />
+                  {chosen ? `Gerar PIX de ${formatBRL(cart.subtotal + chosen.price - (discount?.amount ?? 0))}` : "Gerar PIX"}{" "}
+                  <ArrowRight className="size-4" />
                 </button>
               </div>
             </form>
@@ -615,7 +661,54 @@ export function CheckoutFlow() {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-          <OrderSummary lines={lines} subtotal={cart.subtotal} shipping={pix?.shipping ?? chosen} />
+          <OrderSummary lines={lines} subtotal={cart.subtotal} shipping={pix?.shipping ?? chosen} discount={discount} />
+          {!pix && (
+            <section className="surface p-5" aria-label="Cupom de desconto">
+              {coupon ? (
+                <div className="flex items-center justify-between gap-3 rounded-xl bg-gold-soft px-4 py-3 text-sm">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <TicketPercent className="size-4 shrink-0 text-gold-strong" />
+                    <span className="min-w-0">
+                      <strong className="font-mono">{coupon.code}</strong>
+                      <span className="block text-xs text-muted-foreground">{couponLabel(coupon)}</span>
+                    </span>
+                  </span>
+                  <button type="button" onClick={() => setCoupon(null)} className="text-xs underline underline-offset-4">
+                    Remover
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={applyCoupon} className="flex gap-2">
+                  <label htmlFor="f-coupon" className="sr-only">Cupom de desconto</label>
+                  <input
+                    id="f-coupon"
+                    value={couponInput}
+                    onChange={(e) => {
+                      setCouponInput(e.target.value.toUpperCase())
+                      setCouponError(null)
+                    }}
+                    placeholder="Tem um cupom?"
+                    autoComplete="off"
+                    aria-invalid={Boolean(couponError)}
+                    aria-describedby={couponError ? "f-coupon-err" : undefined}
+                    className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-card px-3.5 font-mono text-sm uppercase outline-none placeholder:font-sans placeholder:normal-case focus:border-gold focus:ring-2 focus:ring-gold/15"
+                  />
+                  <button
+                    type="submit"
+                    disabled={couponLoading || !couponInput.trim()}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 text-sm font-medium disabled:opacity-50"
+                  >
+                    {couponLoading && <Loader2 className="size-3.5 animate-spin" />} Aplicar
+                  </button>
+                </form>
+              )}
+              {couponError && (
+                <p id="f-coupon-err" className="mt-2 text-xs text-destructive" role="alert">
+                  {couponError}
+                </p>
+              )}
+            </section>
+          )}
           {step >= 2 && customer.fullName && addressComplete && <AddressCard name={customer.fullName} address={address} days={(pix?.shipping ?? chosen)?.days} />}
           <ProtectedCard />
         </aside>
@@ -629,6 +722,7 @@ function SuccessScreen({
   lines,
   subtotal,
   shipping,
+  discount,
   email,
   name,
 }: {
@@ -636,6 +730,7 @@ function SuccessScreen({
   lines: SummaryLine[]
   subtotal: number
   shipping: PixInfo["shipping"]
+  discount: PixInfo["discount"]
   email: string
   name: string
 }) {
@@ -667,9 +762,15 @@ function SuccessScreen({
             <span>Frete {shipping.name}</span>
             <span>{formatBRL(shipping.price)}</span>
           </li>
+          {discount && (
+            <li className="flex justify-between rounded-lg bg-gold-soft px-4 py-2.5 text-gold-strong">
+              <span>Cupom {discount.code}</span>
+              <span>− {formatBRL(discount.amount)}</span>
+            </li>
+          )}
           <li className="flex justify-between px-4 pt-2 font-medium">
             <span>Total pago</span>
-            <span className="font-serif text-lg">{formatBRL(subtotal + shipping.price)}</span>
+            <span className="font-serif text-lg">{formatBRL(subtotal + shipping.price - (discount?.amount ?? 0))}</span>
           </li>
         </ul>
         <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">

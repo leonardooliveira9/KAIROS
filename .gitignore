@@ -27,4 +27,6 @@ yarn-error.log*
 next-env.d.ts
 # dados locais de pedidos
 /.data
+# fotos enviadas pelo admin em desenvolvimento (em produção ficam no Vercel Blob)
+/public/uploads
 !.env.example

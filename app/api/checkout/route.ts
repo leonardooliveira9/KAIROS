@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import QRCode from "qrcode"
 import { checkoutSchema, fieldErrors } from "@/lib/validation"
-import { getProduct } from "@/lib/products"
+import { getProduct } from "@/lib/server/products-store"
 import { CUSTOM_SLUG, customKey, customPrice, describeCustom, parseCustom } from "@/lib/customizer"
 import { storeConfig } from "@/lib/store-config"
 import { buildStaticPix } from "@/lib/pix-brcode"
@@ -10,6 +10,8 @@ import { abacatePayEnabled, createPixCharge } from "@/lib/server/abacatepay"
 import { clientIp, requestUser } from "@/lib/server/auth"
 import { takeRateLimit } from "@/lib/server/rate-limit"
 import { quoteShipping, ShippingError } from "@/lib/server/shipping"
+import { checkCoupon } from "@/lib/server/coupons-store"
+import { couponDiscount, couponLabel } from "@/lib/coupons"
 import { isFullyVerified, updateUser } from "@/lib/server/users-store"
 
 export const runtime = "nodejs"
@@ -39,7 +41,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Confira os dados informados.", fields: fieldErrors(parsed.error) }, { status: 400 })
   }
-  const { customer, address, items, shippingService } = parsed.data
+  const { customer, address, items, shippingService, couponCode } = parsed.data
 
   // O preço SEMPRE vem do catálogo do servidor, nunca do navegador
   const merged = new Map<string, OrderItem>()
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
         details: describeCustom(custom),
       }
     } else {
-      const product = getProduct(i.slug)
+      const product = await getProduct(i.slug)
       if (!product) {
         return NextResponse.json({ error: "Um dos itens da sacola não está mais disponível." }, { status: 400 })
       }
@@ -85,7 +87,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message, fields: { shippingService: message } }, { status: 422 })
   }
   const shipping = shippingQuote.price
-  const total = Math.round((subtotal + shipping) * 100) / 100
+
+  // cupom conferido aqui (validade, limite, mínimo); o desconto também é calculado aqui
+  let coupon: Order["coupon"]
+  let discount = 0
+  if (couponCode) {
+    const checked = await checkCoupon(couponCode, subtotal)
+    if ("error" in checked) {
+      return NextResponse.json({ error: checked.error, fields: { couponCode: checked.error } }, { status: 422 })
+    }
+    discount = couponDiscount(checked.coupon, subtotal, shipping)
+    coupon = { code: checked.coupon.code, label: couponLabel(checked.coupon) }
+  }
+  const total = Math.round((subtotal + shipping - discount) * 100) / 100
+  if (total < 1) return NextResponse.json({ error: "O valor mínimo do pedido é R$ 1,00." }, { status: 422 })
 
   const id = newOrderId()
   const expiresIn = storeConfig.pix.expiresInSeconds
@@ -148,6 +163,7 @@ export async function POST(request: NextRequest) {
     subtotal,
     shipping,
     shippingMethod: { service: shippingQuote.service, name: shippingQuote.name, days: shippingQuote.days },
+    ...(coupon ? { coupon, discount } : {}),
     total,
     payment,
   })
@@ -158,6 +174,8 @@ export async function POST(request: NextRequest) {
     subtotal,
     shipping,
     shippingMethod: { name: shippingQuote.name, days: shippingQuote.days },
+    discount,
+    coupon: coupon ? { code: coupon.code, label: coupon.label } : null,
     total,
     payment: {
       mode: payment.provider,

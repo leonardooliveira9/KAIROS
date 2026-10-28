@@ -1,11 +1,11 @@
 "use client"
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { colorFilters, products, type ProductColor } from "@/lib/products"
+import { colorFilters, type Product, type ProductColor } from "@/lib/products"
 import { cn } from "@/lib/utils"
 import { ProductCard } from "./product-card"
 
-export function CatalogGrid() {
+export function CatalogGrid({ products }: { products: Product[] }) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()

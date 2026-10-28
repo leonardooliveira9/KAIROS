@@ -39,6 +39,8 @@ interface AccountOrder {
   subtotal: number
   shipping: number
   shippingMethod: { name: string; days: number } | null
+  discount: number
+  couponCode: string | null
   total: number
   /** PIX pendente cujo prazo já acabou */
   paymentExpired: boolean
@@ -388,6 +390,12 @@ function OrderCard({ order: o, onExpired }: { order: AccountOrder; onExpired: ()
           <span>Frete{o.shippingMethod ? ` ${o.shippingMethod.name}` : ""}</span>
           <span>{o.shipping === 0 ? "Grátis" : formatBRL(o.shipping)}</span>
         </div>
+        {o.couponCode && (
+          <div className="flex justify-between text-gold-strong">
+            <span>Cupom {o.couponCode}</span>
+            <span>− {formatBRL(o.discount)}</span>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
           {o.trackingCode ? (
             <TrackingCode code={o.trackingCode} />

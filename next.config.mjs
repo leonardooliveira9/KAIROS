@@ -2,6 +2,8 @@
 const nextConfig = {
   images: {
     formats: ["image/avif", "image/webp"],
+    // fotos de produto enviadas pelo admin ficam no Vercel Blob
+    remotePatterns: [{ protocol: "https", hostname: "*.public.blob.vercel-storage.com" }],
   },
   // Páginas do login do Firebase servidas pelo próprio domínio da loja (/__/auth/...).
   // Usadas quando NEXT_PUBLIC_FIREBASE_AUTH_PROXY=true: a janela do Google deixa de depender

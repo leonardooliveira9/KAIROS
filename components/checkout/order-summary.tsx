@@ -18,12 +18,16 @@ export function OrderSummary({
   lines,
   subtotal,
   shipping,
+  discount = null,
 }: {
   lines: SummaryLine[]
   subtotal: number
   /** Frete escolhido; null enquanto o cliente não informou o CEP e o serviço */
   shipping: { name: string; price: number; days: number } | null
+  /** Cupom aplicado e o desconto em R$ */
+  discount?: { code: string; amount: number } | null
 }) {
+  const total = subtotal + (shipping?.price ?? 0) - (discount?.amount ?? 0)
   const count = lines.reduce((s, l) => s + l.quantity, 0)
   return (
     <section className="surface p-5 sm:p-6" aria-label="Resumo do pedido">
@@ -65,13 +69,19 @@ export function OrderSummary({
           </dt>
           <dd className={shipping ? "" : "text-muted-foreground"}>{shipping ? formatBRL(shipping.price) : "informe o CEP"}</dd>
         </div>
+        {discount && discount.amount > 0 && (
+          <div className="flex justify-between text-gold-strong">
+            <dt>Cupom {discount.code}</dt>
+            <dd>− {formatBRL(discount.amount)}</dd>
+          </div>
+        )}
       </dl>
       {shipping && (
         <p className="mt-3 text-xs text-muted-foreground">Entrega em {deliveryLabel(shipping.days)}, com rastreio.</p>
       )}
       <div className="mt-5 flex items-end justify-between border-t border-border/70 pt-5">
         <span className="font-serif text-xl">{shipping ? "Total a transferir" : "Total sem o frete"}</span>
-        <span className="font-serif text-3xl text-gold-strong">{formatBRL(subtotal + (shipping?.price ?? 0))}</span>
+        <span className="font-serif text-3xl text-gold-strong">{formatBRL(total)}</span>
       </div>
     </section>
   )

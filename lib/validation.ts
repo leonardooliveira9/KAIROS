@@ -61,6 +61,8 @@ export const checkoutSchema = z.object({
     .max(20),
   /** Serviço escolhido; o preço é cotado de novo no servidor */
   shippingService: z.enum(SHIPPING_SERVICES, { errorMap: () => ({ message: "Escolha a forma de envio" }) }),
+  /** Cupom digitado pelo cliente (opcional); conferido de novo no servidor */
+  couponCode: z.string().trim().max(30).optional().default(""),
 })
 
 export type CustomerInput = z.input<typeof customerSchema>
@@ -121,3 +123,65 @@ export const resetPasswordSchema = z.object({
   token: z.string().min(10).max(200),
   password: passwordSchema,
 })
+
+/** Endereço de imagem aceito no produto: arquivo do site (/…) ou https */
+const imageUrl = z
+  .string()
+  .trim()
+  .max(500)
+  .refine((v) => /^\/[^/]/.test(v) || /^https:\/\/[^\s]+$/.test(v), "Imagem inválida")
+
+/** Cadastro de produto pelo admin */
+export const productSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .min(3, "Informe o endereço")
+    .max(60)
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Use só letras minúsculas, números e hífen (ex.: terco-azul)"),
+  name: z.string().trim().min(3, "Informe o nome").max(80),
+  price: z.coerce.number().min(1, "Preço mínimo de R$ 1,00").max(10000).transform((v) => Math.round(v * 100) / 100),
+  color: z.enum(["azul", "preto", "rosa", "madeira", "perola"], { errorMap: () => ({ message: "Escolha a cor" }) }),
+  badge: z.string().trim().max(30).default(""),
+  materials: z.string().trim().min(3, "Informe os materiais").max(80),
+  description: z.string().trim().min(10, "Escreva uma descrição curta").max(240),
+  note: z.string().trim().max(160).default(""),
+  longDescription: z.string().trim().max(2000).default(""),
+  images: z.array(imageUrl).min(1, "Adicione pelo menos uma foto").max(8, "No máximo 8 fotos"),
+  specs: z
+    .array(z.object({ label: z.string().trim().min(1).max(40), value: z.string().trim().min(1).max(120) }))
+    .max(10)
+    .default([]),
+  highlights: z
+    .array(z.object({ title: z.string().trim().min(1).max(40), text: z.string().trim().min(1).max(200) }))
+    .max(6)
+    .default([]),
+  available: z.boolean().default(true),
+})
+
+/** Cupom criado no admin */
+export const couponSchema = z
+  .object({
+    code: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9_-]{3,20}$/, "De 3 a 20 letras, números, - ou _ (sem espaço)"),
+    kind: z.enum(["percent", "fixed", "shipping"], { errorMap: () => ({ message: "Escolha o tipo" }) }),
+    value: z.coerce.number().min(0).max(10000).default(0),
+    minSubtotal: z.coerce.number().min(0).max(100000).default(0),
+    expiresOn: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida")
+      .nullable()
+      .or(z.literal("").transform(() => null))
+      .default(null),
+    maxUses: z.coerce.number().int().min(1, "Mínimo de 1 uso").nullable().default(null),
+    active: z.boolean().default(true),
+  })
+  .superRefine((c, ctx) => {
+    if (c.kind === "percent" && (c.value < 1 || c.value > 100)) {
+      ctx.addIssue({ code: "custom", path: ["value"], message: "Use de 1% a 100%" })
+    }
+    if (c.kind === "fixed" && c.value < 1) ctx.addIssue({ code: "custom", path: ["value"], message: "Mínimo de R$ 1,00" })
+  })

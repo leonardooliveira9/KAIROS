@@ -13,7 +13,7 @@ import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise"
  * O e-mail das contas tem índice único (coluna gerada a partir do JSON).
  */
 
-export type Table = "users" | "orders"
+export type Table = "users" | "orders" | "products" | "coupons"
 type Doc = { id: string; createdAt: string }
 
 export const databaseEnabled = () => Boolean(process.env.DATABASE_URL)
@@ -52,7 +52,7 @@ function databaseUri() {
 async function createPool() {
   const mysql = await import("mysql2/promise")
   const pool = mysql.createPool({ uri: databaseUri(), connectionLimit: 3, ssl: sslOptions() })
-  for (const table of ["users", "orders"] satisfies Table[]) {
+  for (const table of ["users", "orders", "products", "coupons"] satisfies Table[]) {
     await pool.query(
       `CREATE TABLE IF NOT EXISTS ${table} (
         id VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -223,4 +223,15 @@ export async function allDocs<T extends Doc>(table: Table): Promise<T[]> {
   }
   const [rows] = await (await pool()).query<RowDataPacket[]>(`SELECT data FROM ${table} ORDER BY created_at DESC`)
   return parse<T>(rows)
+}
+
+/** Apaga pelo id; devolve false se não existia */
+export async function deleteDoc(table: Table, id: string): Promise<boolean> {
+  if (!databaseEnabled()) {
+    const existed = fileTable(table).delete(id)
+    if (existed) persistFile(table)
+    return existed
+  }
+  const [result] = await (await pool()).query<ResultSetHeader>(`DELETE FROM ${table} WHERE id = ?`, [id])
+  return result.affectedRows > 0
 }

@@ -3,7 +3,7 @@ import Link from "next/link"
 import { ArrowDown, ArrowRight, BadgeCheck, Hand, Package, ShieldCheck, Sparkles, Star, Truck, Zap } from "lucide-react"
 import { ProductCard } from "@/components/site/product-card"
 import { SectionHeading } from "@/components/site/section-heading"
-import { products } from "@/lib/products"
+import { listProducts, toProduct } from "@/lib/server/products-store"
 import { testimonials } from "@/lib/testimonials"
 import { formatBRL } from "@/lib/format"
 import { storeConfig } from "@/lib/store-config"
@@ -14,7 +14,11 @@ const trust = [
   { icon: Package, title: "Envio para todo o Brasil", text: "Embalagem de afeto, perfumada e pronta para presentear." },
 ]
 
-export default function HomePage() {
+// o catálogo vem do banco e muda pelo admin
+export const dynamic = "force-dynamic"
+
+export default async function HomePage() {
+  const products = (await listProducts()).map(toProduct)
   const featured = products.slice(0, 3)
 
   return (

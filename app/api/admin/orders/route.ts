@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireRole, sameOrigin } from "@/lib/server/auth"
-import { getOrder, listOrders, updateOrder, type Order } from "@/lib/server/orders-store"
+import { getOrder, listOrders, redeemOrderCoupon, updateOrder, type Order } from "@/lib/server/orders-store"
 import { notifyOrder } from "@/lib/server/order-emails"
 
 export const runtime = "nodejs"
@@ -45,7 +45,9 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
-  const updated = await updateOrder(orderId, patch)
+  let updated = await updateOrder(orderId, patch)
+  // pago à mão (ou enviado direto): conta o uso do cupom, se ainda não contou
+  if (updated && (updated.status === "paid" || updated.status === "shipped")) updated = await redeemOrderCoupon(updated)
   if (updated) {
     // avisa o cliente: pagamento confirmado à mão, envio, ou rastreio informado depois do envio
     if (patch.status === "paid") notifyOrder(updated, "paid")

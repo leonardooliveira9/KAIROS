@@ -4,6 +4,7 @@ import type { CustomRosary } from "@/lib/customizer"
 import type { ShippingService } from "@/lib/shipping"
 import { allDocs, findDocs, getDoc, putDoc, replaceDocIf } from "./db"
 import { notifyOrder } from "./order-emails"
+import { redeemCoupon } from "./coupons-store"
 
 export type OrderStatus = "awaiting_payment" | "paid" | "shipped" | "canceled"
 
@@ -40,6 +41,10 @@ export interface Order {
   shipping: number
   /** Serviço dos Correios escolhido e prazo cotado (pedidos antigos não têm) */
   shippingMethod?: { service: ShippingService; name: string; days: number }
+  /** Desconto do cupom em R$ (produtos ou frete); total = subtotal + shipping - discount */
+  discount?: number
+  /** Cupom usado; `redeemed` = já contado no limite de usos (só quando o pedido é pago) */
+  coupon?: { code: string; label: string; redeemed?: boolean }
   total: number
   payment: {
     provider: "abacatepay" | "static_pix"
@@ -100,8 +105,18 @@ export async function updateIfAwaiting(id: string, patch: Partial<Order>) {
 
 export async function markPaid(id: string) {
   const { order, changed } = await updateIfAwaiting(id, { status: "paid", paidAt: new Date().toISOString() })
-  if (changed && order) notifyOrder(order, "paid")
+  if (changed && order) {
+    notifyOrder(order, "paid")
+    return (await redeemOrderCoupon(order)) ?? order
+  }
   return order
+}
+
+/** Conta o uso do cupom do pedido uma única vez, quando ele é pago */
+export async function redeemOrderCoupon(order: Order) {
+  if (!order.coupon || order.coupon.redeemed) return order
+  await redeemCoupon(order.coupon.code)
+  return updateOrder(order.id, { coupon: { ...order.coupon, redeemed: true } })
 }
 
 /** PIX venceu: cancela só se o pedido ainda estiver esperando pagamento (não desfaz um pagamento já confirmado) */
@@ -128,6 +143,8 @@ export function publicOrder(order: Order) {
     subtotal: order.subtotal,
     shipping: order.shipping,
     shippingMethod: order.shippingMethod ?? null,
+    discount: order.discount ?? 0,
+    couponCode: order.coupon?.code ?? null,
     total: order.total,
   }
 }

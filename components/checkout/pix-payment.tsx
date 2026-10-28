@@ -12,6 +12,8 @@ export interface PixInfo {
   subtotal: number
   /** Frete do pedido, como o servidor cotou */
   shipping: { name: string; price: number; days: number }
+  /** Cupom aplicado e o desconto em R$, como o servidor calculou */
+  discount: { code: string; amount: number } | null
   total: number
   payment: {
     mode: "abacatepay" | "static_pix"
