@@ -1,7 +1,7 @@
 import Image from "next/image"
-import { Lock, MapPin, PartyPopper, ReceiptText, Truck, BadgeCheck } from "lucide-react"
+import { Lock, MapPin, ReceiptText, Truck, BadgeCheck } from "lucide-react"
 import { formatBRL, maskCEP, pluralize } from "@/lib/format"
-import { storeConfig } from "@/lib/store-config"
+import { deliveryLabel } from "@/lib/shipping"
 
 export interface SummaryLine {
   /** Identifica a linha (o personalizado pode aparecer mais de uma vez com escolhas diferentes) */
@@ -21,7 +21,8 @@ export function OrderSummary({
 }: {
   lines: SummaryLine[]
   subtotal: number
-  shipping: number
+  /** Frete escolhido; null enquanto o cliente não informou o CEP e o serviço */
+  shipping: { name: string; price: number; days: number } | null
 }) {
   const count = lines.reduce((s, l) => s + l.quantity, 0)
   return (
@@ -60,26 +61,17 @@ export function OrderSummary({
         </div>
         <div className="flex justify-between">
           <dt className="flex items-center gap-1.5 text-muted-foreground">
-            Frete com rastreio <Truck className="size-3.5" />
+            {shipping ? `Frete ${shipping.name}` : "Frete dos Correios"} <Truck className="size-3.5" />
           </dt>
-          <dd className={shipping === 0 ? "font-medium text-gold-strong" : ""}>
-            {shipping === 0 ? "Grátis" : formatBRL(shipping)}
-          </dd>
+          <dd className={shipping ? "" : "text-muted-foreground"}>{shipping ? formatBRL(shipping.price) : "informe o CEP"}</dd>
         </div>
       </dl>
-      {shipping === 0 ? (
-        <p className="mt-3 flex items-center gap-2 rounded-lg bg-gold-soft px-3 py-2 text-xs text-gold-strong">
-          <PartyPopper className="size-3.5" /> Frete cortesia aplicado na compra de {storeConfig.shipping.freeFromQuantity} ou
-          mais terços.
-        </p>
-      ) : (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Frete grátis a partir de {storeConfig.shipping.freeFromQuantity} terços.
-        </p>
+      {shipping && (
+        <p className="mt-3 text-xs text-muted-foreground">Entrega em {deliveryLabel(shipping.days)}, com rastreio.</p>
       )}
       <div className="mt-5 flex items-end justify-between border-t border-border/70 pt-5">
-        <span className="font-serif text-xl">Total a transferir</span>
-        <span className="font-serif text-3xl text-gold-strong">{formatBRL(subtotal + shipping)}</span>
+        <span className="font-serif text-xl">{shipping ? "Total a transferir" : "Total sem o frete"}</span>
+        <span className="font-serif text-3xl text-gold-strong">{formatBRL(subtotal + (shipping?.price ?? 0))}</span>
       </div>
     </section>
   )
@@ -88,9 +80,12 @@ export function OrderSummary({
 export function AddressCard({
   name,
   address,
+  days,
 }: {
   name: string
   address: { street: string; number: string; complement?: string; neighborhood: string; city: string; state: string; cep: string }
+  /** Prazo do frete escolhido, se já houver */
+  days?: number
 }) {
   return (
     <section className="surface p-5 sm:p-6" aria-label="Endereço de entrega">
@@ -110,7 +105,8 @@ export function AddressCard({
           {address.neighborhood} • {address.city} / {address.state}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          CEP: {maskCEP(address.cep)} • Entrega em {storeConfig.shipping.estimate}
+          CEP: {maskCEP(address.cep)}
+          {days ? ` • Entrega em ${deliveryLabel(days)}` : ""}
         </p>
       </div>
     </section>

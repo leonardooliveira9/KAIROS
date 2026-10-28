@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { onlyDigits } from "./format"
+import { SHIPPING_SERVICES } from "./shipping"
 
 export function isValidCPF(value: string) {
   const cpf = onlyDigits(value)
@@ -58,6 +59,8 @@ export const checkoutSchema = z.object({
     )
     .min(1, "Sua sacola está vazia")
     .max(20),
+  /** Serviço escolhido; o preço é cotado de novo no servidor */
+  shippingService: z.enum(SHIPPING_SERVICES, { errorMap: () => ({ message: "Escolha a forma de envio" }) }),
 })
 
 export type CustomerInput = z.input<typeof customerSchema>
@@ -96,6 +99,12 @@ export const profileSchema = z.object({
     .string()
     .transform(onlyDigits)
     .refine((v) => v === "" || isValidCPF(v), "CPF inválido"),
+  phone: z
+    .string()
+    .optional()
+    .default("")
+    .transform(onlyDigits)
+    .refine((v) => v === "" || v.length === 10 || v.length === 11, "WhatsApp com DDD, ex.: (61) 99999-9999"),
 })
 
 export const changePasswordSchema = z.object({

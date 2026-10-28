@@ -10,7 +10,8 @@ import { VerificationCard } from "@/components/auth/account-dashboard"
 import { GoogleButton } from "@/components/auth/google-button"
 import { customerSchema, addressSchema, fieldErrors, UFS } from "@/lib/validation"
 import { formatBRL, maskCEP, maskCPF, maskPhone, onlyDigits } from "@/lib/format"
-import { storeConfig, whatsappLink } from "@/lib/store-config"
+import { whatsappLink } from "@/lib/store-config"
+import { deliveryLabel, type ShippingQuote, type ShippingService } from "@/lib/shipping"
 import { cn } from "@/lib/utils"
 import { CheckoutStepper } from "./stepper"
 import { Field } from "./field"
@@ -25,13 +26,13 @@ const emptyAddress = { cep: "", street: "", number: "", complement: "", neighbor
 
 type Customer = typeof emptyCustomer
 
-/** Campos vindos da conta: e-mail e telefone são sempre os confirmados; nome e CPF só preenchem se vazios */
+/** Campos vindos da conta: o e-mail é sempre o confirmado; nome, celular e CPF só preenchem se vazios */
 function withAccount(c: Customer, user: SessionUser | null): Customer {
   if (!user) return c
   return {
     fullName: c.fullName || user.name,
     email: user.email,
-    phone: user.phone ? maskPhone(user.phone) : "",
+    phone: c.phone || (user.phone ? maskPhone(user.phone) : ""),
     cpf: c.cpf || (user.cpf ? maskCPF(user.cpf) : ""),
   }
 }
@@ -66,8 +67,11 @@ export function CheckoutFlow() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [simulating, setSimulating] = useState(false)
-  const [paid, setPaid] = useState<{ orderId: string; lines: SummaryLine[]; subtotal: number; shipping: number } | null>(null)
+  const [paid, setPaid] = useState<{ orderId: string; lines: SummaryLine[]; subtotal: number; shipping: PixInfo["shipping"] } | null>(null)
   const [cepLoading, setCepLoading] = useState(false)
+  // frete: cotado para o CEP + quantidade atuais; o serviço escolhido vale enquanto estiver na cotação
+  const [quoteResult, setQuoteResult] = useState<{ key: string; quotes?: ShippingQuote[]; error?: string } | null>(null)
+  const [service, setService] = useState<ShippingService | null>(null)
   const restored = useRef(false)
   const numberRef = useRef<HTMLInputElement>(null)
 
@@ -93,13 +97,48 @@ export function CheckoutFlow() {
       setAddress({ ...emptyAddress, ...draft.address })
     }
     const pending = readSession<PixInfo>(PENDING_KEY)
-    if (pending && new Date(pending.payment.expiresAt).getTime() > Date.now() && Math.abs(pending.total - cart.total) < 0.01) {
+    if (
+      pending?.shipping &&
+      new Date(pending.payment.expiresAt).getTime() > Date.now() &&
+      Math.abs(pending.subtotal - cart.subtotal) < 0.01
+    ) {
       setPix(pending)
       setStep(3)
     } else {
       writeSession(PENDING_KEY, null)
     }
-  }, [cart.hydrated, cart.total, user])
+  }, [cart.hydrated, cart.subtotal, user])
+
+  // cota PAC e SEDEX quando o CEP está completo (de novo se a quantidade mudar)
+  const cepDigits = onlyDigits(address.cep)
+  const quoteKey = step >= 2 && cepDigits.length === 8 && cart.totalItems > 0 ? `${cepDigits}:${cart.totalItems}` : null
+  useEffect(() => {
+    if (!quoteKey || quoteResult?.key === quoteKey) return
+    let active = true
+    const [cep, quantity] = quoteKey.split(":")
+    fetch("/api/shipping", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cep, quantity: Number(quantity) }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}))
+        if (!active) return
+        if (!res.ok) setQuoteResult({ key: quoteKey, error: data.error || "Não conseguimos calcular o frete." })
+        else setQuoteResult({ key: quoteKey, quotes: data.quotes })
+      })
+      .catch(() => active && setQuoteResult({ key: quoteKey, error: "Sem conexão para calcular o frete." }))
+    return () => {
+      active = false
+    }
+  }, [quoteKey, quoteResult?.key])
+
+  const currentQuote = quoteKey && quoteResult?.key === quoteKey ? quoteResult : null
+  const quoteLoading = Boolean(quoteKey) && !currentQuote
+  const quotes = currentQuote?.quotes ?? []
+  // padrão: a opção mais barata (a cotação vem ordenada por preço)
+  const chosen = quotes.find((q) => q.service === service) ?? quotes[0] ?? null
+  const chosenService = chosen?.service
 
   useEffect(() => {
     if (restored.current) writeSession(DRAFT_KEY, { customer, address })
@@ -171,14 +210,23 @@ export function CheckoutFlow() {
           customer,
           address,
           items: cart.lines.map((l) => ({ slug: l.slug, quantity: l.quantity, custom: l.custom })),
+          shippingService: chosenService,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         if (data.fields) setErrors(data.fields)
+        // frete recusado (CEP mudou, serviço indisponível): cota de novo ao voltar para o endereço
+        if (data.fields?.shippingService) setQuoteResult(null)
         throw new Error(data.error || "Não foi possível gerar o PIX.")
       }
-      const info: PixInfo = { orderId: data.orderId, total: data.total, payment: data.payment }
+      const info: PixInfo = {
+        orderId: data.orderId,
+        subtotal: data.subtotal,
+        shipping: { name: data.shippingMethod.name, price: data.shipping, days: data.shippingMethod.days },
+        total: data.total,
+        payment: data.payment,
+      }
       setPix(info)
       writeSession(PENDING_KEY, info)
     } catch (err) {
@@ -186,25 +234,31 @@ export function CheckoutFlow() {
     } finally {
       setCreating(false)
     }
-  }, [customer, address, cart.lines])
+  }, [customer, address, cart.lines, chosenService])
 
   const goToPayment = (e: React.FormEvent) => {
     e.preventDefault()
     const r = addressSchema.safeParse(address)
     if (!r.success) return setErrors(fieldErrors(r.error))
+    if (!chosen) {
+      return setErrors({
+        shippingService: quoteLoading ? "Aguarde o cálculo do frete." : currentQuote?.error || "Informe o CEP para calcular o frete.",
+      })
+    }
     setErrors({})
     setStep(3)
     createPix()
   }
 
-  // guarda os valores atuais da sacola para usar dentro do polling sem reiniciá-lo a cada render
-  const latest = useRef({ lines, subtotal: cart.subtotal, shipping: cart.shipping, clear: cart.clear })
+  // guarda os valores atuais para usar dentro do polling sem reiniciá-lo a cada render
+  const latest = useRef({ lines, subtotal: cart.subtotal, shipping: pix?.shipping ?? null, clear: cart.clear })
   useEffect(() => {
-    latest.current = { lines, subtotal: cart.subtotal, shipping: cart.shipping, clear: cart.clear }
+    latest.current = { lines, subtotal: cart.subtotal, shipping: pix?.shipping ?? null, clear: cart.clear }
   })
 
   const finish = useCallback((orderId: string) => {
     const { lines, subtotal, shipping, clear } = latest.current
+    if (!shipping) return
     setPaid({ orderId, lines, subtotal, shipping })
     writeSession(PENDING_KEY, null)
     writeSession(DRAFT_KEY, null)
@@ -278,7 +332,7 @@ export function CheckoutFlow() {
     )
   }
 
-  // Compra exige conta com e-mail e telefone confirmados
+  // Compra exige conta com e-mail confirmado
   if (!user || !isFullyVerified(user)) {
     return (
       <div className="container-k py-8 sm:py-10">
@@ -291,7 +345,7 @@ export function CheckoutFlow() {
               </p>
               <h2 className="mt-2 font-serif text-2xl">Entre para finalizar sua compra</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Para sua segurança, os pedidos são feitos com uma conta com e-mail e celular confirmados. Sua sacola fica
+                Para sua segurança, os pedidos são feitos com uma conta com e-mail confirmado. Sua sacola fica
                 guardada.
               </p>
               <div className="mt-6 space-y-3">
@@ -310,7 +364,7 @@ export function CheckoutFlow() {
             <VerificationCard className="" />
           )}
           <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-            <OrderSummary lines={lines} subtotal={cart.subtotal} shipping={cart.shipping} />
+            <OrderSummary lines={lines} subtotal={cart.subtotal} shipping={null} />
             <ProtectedCard />
           </aside>
         </div>
@@ -363,10 +417,10 @@ export function CheckoutFlow() {
                   inputMode="tel"
                   autoComplete="tel-national"
                   value={customer.phone}
-                  readOnly
-                  aria-readonly
+                  onChange={(e) => setC("phone", maskPhone(e.target.value))}
                   error={errors.phone}
-                  hint="Confirmado por SMS"
+                  placeholder="(61) 99999-9999"
+                  hint="Para falarmos com você sobre a entrega"
                 />
                 <Field
                   label="CPF"
@@ -393,7 +447,7 @@ export function CheckoutFlow() {
                 <MapPin className="size-3.5" /> Etapa 2 de 3
               </p>
               <h2 className="mt-2 font-serif text-2xl">Endereço de entrega</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Enviamos para todo o Brasil com código de rastreio.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Enviamos pelos Correios para todo o Brasil, com código de rastreio.</p>
               <div className="mt-6 grid grid-cols-6 gap-4">
                 <div className="relative col-span-6 sm:col-span-2">
                   <Field
@@ -422,6 +476,55 @@ export function CheckoutFlow() {
                     Não sei meu CEP
                   </a>
                 </div>
+                {cepDigits.length === 8 && (
+                  <fieldset className="col-span-6" aria-busy={quoteLoading}>
+                    <legend className="text-[13px] font-medium">Forma de envio (Correios)</legend>
+                    {quoteLoading ? (
+                      <p className="mt-2 flex items-center gap-2 rounded-xl bg-secondary/60 px-4 py-3 text-sm text-muted-foreground">
+                        <Loader2 className="size-4 animate-spin" /> Calculando o frete para o seu CEP…
+                      </p>
+                    ) : currentQuote?.error ? (
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+                        {currentQuote.error}
+                        <button type="button" onClick={() => setQuoteResult(null)} className="text-xs font-medium underline underline-offset-4">
+                          Tentar de novo
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {quotes.map((q) => (
+                          <label
+                            key={q.service}
+                            className={cn(
+                              "flex cursor-pointer items-center gap-3 rounded-xl border bg-card px-4 py-3 text-sm transition-colors",
+                              chosen?.service === q.service ? "border-gold bg-gold-soft/50" : "border-border hover:bg-secondary",
+                            )}
+                          >
+                            <input
+                              type="radio"
+                              name="shippingService"
+                              value={q.service}
+                              checked={chosen?.service === q.service}
+                              onChange={() => {
+                                setService(q.service)
+                                if (errors.shippingService) setErrors((e) => ({ ...e, shippingService: "" }))
+                              }}
+                              className="size-4 accent-[var(--gold)]"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-medium">{q.name}</span>
+                              <span className="block text-xs text-muted-foreground">Entrega em {deliveryLabel(q.days)}</span>
+                            </span>
+                            <span className="font-medium">{formatBRL(q.price)}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {errors.shippingService && !currentQuote?.error && (
+                      <p className="mt-1.5 text-xs text-destructive">{errors.shippingService}</p>
+                    )}
+                  </fieldset>
+                )}
                 <Field className="col-span-6 sm:col-span-4" label="Rua" name="street" autoComplete="address-line1" value={address.street} onChange={(e) => setA("street", e.target.value)} error={errors.street} />
                 <Field className="col-span-3 sm:col-span-2" label="Número" name="number" ref={numberRef} value={address.number} onChange={(e) => setA("number", e.target.value)} error={errors.number} />
                 <Field className="col-span-3 sm:col-span-3" label="Complemento" name="complement" autoComplete="address-line2" value={address.complement} onChange={(e) => setA("complement", e.target.value)} placeholder="Opcional" />
@@ -464,7 +567,7 @@ export function CheckoutFlow() {
                   <ArrowLeft className="size-4" /> Voltar
                 </button>
                 <button type="submit" className="inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-sm font-medium text-primary-foreground hover:opacity-90">
-                  Gerar PIX de {formatBRL(cart.total)} <ArrowRight className="size-4" />
+                  {chosen ? `Gerar PIX de ${formatBRL(cart.subtotal + chosen.price)}` : "Gerar PIX"} <ArrowRight className="size-4" />
                 </button>
               </div>
             </form>
@@ -512,8 +615,8 @@ export function CheckoutFlow() {
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-          <OrderSummary lines={lines} subtotal={cart.subtotal} shipping={cart.shipping} />
-          {step >= 2 && customer.fullName && addressComplete && <AddressCard name={customer.fullName} address={address} />}
+          <OrderSummary lines={lines} subtotal={cart.subtotal} shipping={pix?.shipping ?? chosen} />
+          {step >= 2 && customer.fullName && addressComplete && <AddressCard name={customer.fullName} address={address} days={(pix?.shipping ?? chosen)?.days} />}
           <ProtectedCard />
         </aside>
       </div>
@@ -532,7 +635,7 @@ function SuccessScreen({
   orderId: string
   lines: SummaryLine[]
   subtotal: number
-  shipping: number
+  shipping: PixInfo["shipping"]
   email: string
   name: string
 }) {
@@ -548,7 +651,8 @@ function SuccessScreen({
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
           Recebemos seu PIX. O pedido <strong className="text-foreground">{orderId}</strong> já está sendo preparado com
-          carinho e será enviado em {storeConfig.shipping.estimate}.{email && <> Enviaremos o rastreio para {email}.</>}
+          carinho e chega pelo {shipping.name} em {deliveryLabel(shipping.days)}.
+          {email && <> Enviaremos o rastreio para {email}.</>}
         </p>
         <ul className="mt-8 space-y-2 text-left text-sm">
           {lines.map((l) => (
@@ -559,9 +663,13 @@ function SuccessScreen({
               <span>{formatBRL(l.price * l.quantity)}</span>
             </li>
           ))}
+          <li className="flex justify-between rounded-lg bg-secondary/60 px-4 py-2.5">
+            <span>Frete {shipping.name}</span>
+            <span>{formatBRL(shipping.price)}</span>
+          </li>
           <li className="flex justify-between px-4 pt-2 font-medium">
-            <span>Total pago {shipping === 0 && <span className="font-normal text-muted-foreground">(frete grátis)</span>}</span>
-            <span className="font-serif text-lg">{formatBRL(subtotal + shipping)}</span>
+            <span>Total pago</span>
+            <span className="font-serif text-lg">{formatBRL(subtotal + shipping.price)}</span>
           </li>
         </ul>
         <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">

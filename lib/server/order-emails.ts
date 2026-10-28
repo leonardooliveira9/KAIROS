@@ -1,6 +1,7 @@
 import "server-only"
 import { after } from "next/server"
 import { formatBRL } from "@/lib/format"
+import { deliveryLabel } from "@/lib/shipping"
 import { storeConfig } from "@/lib/store-config"
 import { configuredSiteUrl, sendActionEmail } from "./mailer"
 import type { Order } from "./orders-store"
@@ -23,7 +24,7 @@ function sendOrderEmail(order: Order, kind: "paid" | "shipped") {
     return sendActionEmail({
       to: order.customer.email,
       subject: `Pagamento confirmado — pedido ${order.id}`,
-      intro: `Olá, ${firstName}! Recebemos o PIX de ${formatBRL(order.total)} do pedido ${order.id}. Seu pedido já está sendo preparado e será enviado em ${storeConfig.shipping.estimate}.`,
+      intro: `Olá, ${firstName}! Recebemos o PIX de ${formatBRL(order.total)} do pedido ${order.id}. Seu pedido já está sendo preparado${order.shippingMethod ? ` e chega pelo ${order.shippingMethod.name} em ${deliveryLabel(order.shippingMethod.days)}` : ""}.`,
       lines: itemLines(order),
       ...action,
       footer: "Quando o pedido for enviado, mandamos outro e-mail com o código de rastreio.",

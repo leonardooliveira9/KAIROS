@@ -14,7 +14,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter()
   const params = useSearchParams()
   const { setUser } = useAuth()
-  // login volta à página inicial; conta nova vai a /conta, onde confirma e-mail e celular
+  // login volta à página inicial; conta nova vai a /conta, onde confirma o e-mail
   const next = safeNext(params.get("next"), mode === "login" ? "/" : "/conta")
   const [form, setForm] = useState({ name: "", email: "", password: "" })
   const [errors, setErrors] = useState<Record<string, string>>({})

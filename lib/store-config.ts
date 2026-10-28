@@ -13,11 +13,17 @@ export const storeConfig = {
     email: "contato@kairos.com.br",
   },
   shipping: {
-    /** Frete fixo para todo o Brasil */
-    flatFee: 9.9,
-    /** A partir desta quantidade de terços, o frete é grátis */
-    freeFromQuantity: 3,
-    estimate: "3 a 8 dias úteis após a confirmação do PIX",
+    /** CEP de onde os pacotes são postados (origem do cálculo dos Correios). Só números. */
+    originCep: "",
+    /** Dias para montar o terço antes de postar; somados ao prazo dos Correios */
+    handlingDays: 2,
+    /**
+     * Pacote enviado aos Correios (em cm e kg). O peso cresce com a quantidade;
+     * a altura também, até o máximo. Confira com a caixa que você usa.
+     */
+    package: { width: 12, length: 17, baseHeight: 4, heightPerItem: 1, maxHeight: 20, baseWeightKg: 0.1, weightPerItemKg: 0.08 },
+    /** Usado só quando o Melhor Envio não está configurado (sem MELHOR_ENVIO_TOKEN ou sem originCep) */
+    fallback: { price: 9.9, days: 10 },
   },
   pix: {
     /** Chave PIX usada no modo PIX estático (quando não há ABACATEPAY_API_KEY) */
@@ -29,11 +35,6 @@ export const storeConfig = {
     expiresInSeconds: 60 * 60,
   },
 } as const
-
-export function shippingFor(quantity: number) {
-  if (quantity <= 0) return 0
-  return quantity >= storeConfig.shipping.freeFromQuantity ? 0 : storeConfig.shipping.flatFee
-}
 
 export function whatsappLink(message?: string) {
   const base = `https://wa.me/${storeConfig.contact.whatsapp}`

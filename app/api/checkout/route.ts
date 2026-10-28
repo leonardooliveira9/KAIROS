@@ -3,12 +3,13 @@ import QRCode from "qrcode"
 import { checkoutSchema, fieldErrors } from "@/lib/validation"
 import { getProduct } from "@/lib/products"
 import { CUSTOM_SLUG, customKey, customPrice, describeCustom, parseCustom } from "@/lib/customizer"
-import { shippingFor, storeConfig } from "@/lib/store-config"
+import { storeConfig } from "@/lib/store-config"
 import { buildStaticPix } from "@/lib/pix-brcode"
 import { newOrderId, saveOrder, type Order, type OrderItem } from "@/lib/server/orders-store"
 import { abacatePayEnabled, createPixCharge } from "@/lib/server/abacatepay"
 import { clientIp, requestUser } from "@/lib/server/auth"
 import { takeRateLimit } from "@/lib/server/rate-limit"
+import { quoteShipping, ShippingError } from "@/lib/server/shipping"
 import { isFullyVerified, updateUser } from "@/lib/server/users-store"
 
 export const runtime = "nodejs"
@@ -19,29 +20,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Muitas tentativas. Aguarde alguns minutos." }, { status: 429 })
   }
 
-  // Compra exige conta com e-mail e telefone confirmados
+  // Compra exige conta com e-mail confirmado
   const user = await requestUser(request)
   if (!user) {
     return NextResponse.json({ error: "Entre na sua conta para finalizar a compra.", code: "login_required" }, { status: 401 })
   }
   if (!isFullyVerified(user)) {
     return NextResponse.json(
-      { error: "Confirme seu e-mail e seu telefone antes de finalizar a compra.", code: "verification_required" },
+      { error: "Confirme seu e-mail antes de finalizar a compra.", code: "verification_required" },
       { status: 403 },
     )
   }
 
   const body = await request.json().catch(() => null)
-  // e-mail e telefone usados no pedido são sempre os verificados da conta
-  if (body?.customer) {
-    body.customer.email = user.email
-    body.customer.phone = user.phone
-  }
+  // o e-mail do pedido é sempre o confirmado da conta; o celular é o informado no checkout
+  if (body?.customer) body.customer.email = user.email
   const parsed = checkoutSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: "Confira os dados informados.", fields: fieldErrors(parsed.error) }, { status: 400 })
   }
-  const { customer, address, items } = parsed.data
+  const { customer, address, items, shippingService } = parsed.data
 
   // O preço SEMPRE vem do catálogo do servidor, nunca do navegador
   const merged = new Map<string, OrderItem>()
@@ -72,7 +70,21 @@ export async function POST(request: NextRequest) {
   const orderItems = [...merged.values()]
   const quantity = orderItems.reduce((s, i) => s + i.quantity, 0)
   const subtotal = orderItems.reduce((s, i) => s + i.price * i.quantity, 0)
-  const shipping = shippingFor(quantity)
+
+  // frete cotado de novo aqui: o navegador só diz qual serviço escolheu
+  let shippingQuote
+  try {
+    shippingQuote = (await quoteShipping(address.cep, quantity)).find((q) => q.service === shippingService)
+  } catch (err) {
+    if (!(err instanceof ShippingError)) console.error("[checkout] frete", err)
+    const message = err instanceof ShippingError ? err.message : "Não conseguimos calcular o frete agora."
+    return NextResponse.json({ error: message, fields: { shippingService: message } }, { status: 422 })
+  }
+  if (!shippingQuote) {
+    const message = "Esta forma de envio não está disponível para o seu CEP. Escolha outra."
+    return NextResponse.json({ error: message, fields: { shippingService: message } }, { status: 422 })
+  }
+  const shipping = shippingQuote.price
   const total = Math.round((subtotal + shipping) * 100) / 100
 
   const id = newOrderId()
@@ -120,7 +132,10 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (!user.cpf) await updateUser(user.id, { cpf: customer.cpf })
+  // guarda na conta o que ainda não estava lá, para preencher a próxima compra
+  if (!user.cpf || !user.phone) {
+    await updateUser(user.id, { cpf: user.cpf || customer.cpf, phone: user.phone || customer.phone })
+  }
 
   await saveOrder({
     id,
@@ -132,6 +147,7 @@ export async function POST(request: NextRequest) {
     items: orderItems,
     subtotal,
     shipping,
+    shippingMethod: { service: shippingQuote.service, name: shippingQuote.name, days: shippingQuote.days },
     total,
     payment,
   })
@@ -141,6 +157,7 @@ export async function POST(request: NextRequest) {
     orderId: id,
     subtotal,
     shipping,
+    shippingMethod: { name: shippingQuote.name, days: shippingQuote.days },
     total,
     payment: {
       mode: payment.provider,

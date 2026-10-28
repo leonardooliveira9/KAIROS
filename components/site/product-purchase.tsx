@@ -114,9 +114,9 @@ export function ProductPurchase({ product }: { product: Product }) {
             </span>
           </AccordionTrigger>
           <AccordionContent className="text-[13px] leading-relaxed text-muted-foreground">
-            Enviamos para todo o Brasil com código de rastreio. Prazo estimado: {storeConfig.shipping.estimate}. Frete
-            fixo de {formatBRL(storeConfig.shipping.flatFee)} e grátis a partir de {storeConfig.shipping.freeFromQuantity}{" "}
-            terços.
+            Enviamos pelos Correios (PAC ou SEDEX) para todo o Brasil, com código de rastreio. O frete e o prazo são
+            calculados pelo seu CEP no checkout, já contando os {storeConfig.shipping.handlingDays} dias úteis para
+            montarmos o terço.
           </AccordionContent>
         </AccordionItem>
         <AccordionItem value="garantia" className="rounded-2xl border border-border/60 bg-card px-5 last:border-b">

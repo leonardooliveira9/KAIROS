@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils"
 
 export interface PixInfo {
   orderId: string
+  subtotal: number
+  /** Frete do pedido, como o servidor cotou */
+  shipping: { name: string; price: number; days: number }
   total: number
   payment: {
     mode: "abacatepay" | "static_pix"

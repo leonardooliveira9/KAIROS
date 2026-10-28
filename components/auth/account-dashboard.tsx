@@ -23,8 +23,7 @@ import { Field } from "@/components/checkout/field"
 import { useCountdown } from "@/components/checkout/pix-payment"
 import { isFullyVerified, useAuth } from "@/contexts/auth-context"
 import { whatsappLink } from "@/lib/store-config"
-import { PhoneVerification } from "./phone-verification"
-import { formatBRL, formatDateTime, maskCPF } from "@/lib/format"
+import { formatBRL, formatDateTime, maskCPF, maskPhone } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type Tab = "pedidos" | "dados" | "seguranca"
@@ -39,6 +38,7 @@ interface AccountOrder {
   items: { slug: string; name: string; quantity: number; price: number; image: string; details?: string }[]
   subtotal: number
   shipping: number
+  shippingMethod: { name: string; days: number } | null
   total: number
   /** PIX pendente cujo prazo já acabou */
   paymentExpired: boolean
@@ -159,7 +159,7 @@ export function VerifyEmailBanner() {
   )
 }
 
-/** E-mail + telefone confirmados são obrigatórios para comprar */
+/** E-mail confirmado é obrigatório para comprar */
 export function VerificationCard({ className = "mt-6" }: { className?: string }) {
   const { user } = useAuth()
   if (!user) return null
@@ -167,9 +167,9 @@ export function VerificationCard({ className = "mt-6" }: { className?: string })
     <section className={cn("surface space-y-4 p-5 sm:p-6", className)} aria-label="Verificação da conta">
       <div>
         <p className="flex items-center gap-2 font-serif text-xl">
-          <ShieldCheck className="size-5 text-gold" /> Confirme sua conta para comprar
+          <ShieldCheck className="size-5 text-gold" /> Confirme seu e-mail para comprar
         </p>
-        <p className="mt-1 text-sm text-muted-foreground">Por segurança, todo pedido exige e-mail e celular confirmados.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Por segurança, todo pedido exige o e-mail da conta confirmado.</p>
       </div>
       {user.emailVerifiedAt ? (
         <p className="flex items-center gap-2 rounded-xl bg-success-soft px-4 py-3 text-sm text-success">
@@ -178,7 +178,6 @@ export function VerificationCard({ className = "mt-6" }: { className?: string })
       ) : (
         <VerifyEmailBanner />
       )}
-      <PhoneVerification />
     </section>
   )
 }
@@ -386,7 +385,7 @@ function OrderCard({ order: o, onExpired }: { order: AccountOrder; onExpired: ()
           <span>{formatBRL(o.subtotal)}</span>
         </div>
         <div className="flex justify-between text-muted-foreground">
-          <span>Frete</span>
+          <span>Frete{o.shippingMethod ? ` ${o.shippingMethod.name}` : ""}</span>
           <span>{o.shipping === 0 ? "Grátis" : formatBRL(o.shipping)}</span>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
@@ -501,6 +500,7 @@ function ProfileTab() {
   const [form, setForm] = useState({
     name: user?.name ?? "",
     cpf: user?.cpf ? maskCPF(user.cpf) : "",
+    phone: user?.phone ? maskPhone(user.phone) : "",
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -540,13 +540,10 @@ function ProfileTab() {
       <div>
         <Field label="CPF" name="cpf" inputMode="numeric" value={form.cpf} onChange={(e) => setForm({ ...form, cpf: maskCPF(e.target.value) })} error={errors.cpf} placeholder="000.000.000-00" />
       </div>
+      <Field label="Celular (WhatsApp)" name="phone" type="tel" inputMode="tel" autoComplete="tel-national" value={form.phone} onChange={(e) => setForm({ ...form, phone: maskPhone(e.target.value) })} error={errors.phone} placeholder="(61) 99999-9999" hint="Usado para falarmos com você sobre a entrega." />
       <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-medium text-primary-foreground disabled:opacity-60">
         {saving && <Loader2 className="size-4 animate-spin" />} Salvar
       </button>
-      <div className="border-t border-border/70 pt-5">
-        <p className="mb-3 text-[13px] font-medium">Celular (WhatsApp)</p>
-        <PhoneVerification compact />
-      </div>
     </form>
   )
 }

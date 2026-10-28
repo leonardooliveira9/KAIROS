@@ -1,6 +1,7 @@
 import "server-only"
 import crypto from "crypto"
 import type { CustomRosary } from "@/lib/customizer"
+import type { ShippingService } from "@/lib/shipping"
 import { allDocs, findDocs, getDoc, putDoc, replaceDocIf } from "./db"
 import { notifyOrder } from "./order-emails"
 
@@ -37,6 +38,8 @@ export interface Order {
   items: OrderItem[]
   subtotal: number
   shipping: number
+  /** Serviço dos Correios escolhido e prazo cotado (pedidos antigos não têm) */
+  shippingMethod?: { service: ShippingService; name: string; days: number }
   total: number
   payment: {
     provider: "abacatepay" | "static_pix"
@@ -124,6 +127,7 @@ export function publicOrder(order: Order) {
     items: order.items,
     subtotal: order.subtotal,
     shipping: order.shipping,
+    shippingMethod: order.shippingMethod ?? null,
     total: order.total,
   }
 }

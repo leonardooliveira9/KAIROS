@@ -17,17 +17,11 @@ export function CartSheet() {
     lines,
     totalItems,
     subtotal,
-    shipping,
-    total,
-    missingForFreeShipping,
     setQuantity,
     removeItem,
     isCartOpen,
     setCartOpen,
   } = useCart()
-
-  const { freeFromQuantity } = storeConfig.shipping
-  const progress = Math.min(100, Math.round((totalItems / freeFromQuantity) * 100))
 
   const checkout = () => {
     setCartOpen(false)
@@ -84,26 +78,12 @@ export function CartSheet() {
         ) : (
           <>
             <div className="flex-1 space-y-3 overflow-y-auto px-6 py-5">
-              <div className="rounded-xl bg-secondary/70 p-3.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-2">
-                    <Truck className="size-4 text-gold" />
-                    {missingForFreeShipping > 0 ? (
-                      <span>
-                        {/* o frete grátis conta terços, não valor */}
-                        {missingForFreeShipping > 1 ? "Faltam" : "Falta"} apenas <strong>{pluralize(missingForFreeShipping, "terço", "terços")}</strong> para{" "}
-                        <strong>Frete Grátis</strong>
-                      </span>
-                    ) : (
-                      <strong className="text-success">Frete grátis garantido!</strong>
-                    )}
-                  </span>
-                  <span className="font-medium text-gold">{progress}%</span>
-                </div>
-                <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-border" aria-hidden>
-                  <div className="h-full rounded-full bg-gold transition-all duration-500" style={{ width: `${progress}%` }} />
-                </div>
-              </div>
+              <p className="flex items-center gap-2 rounded-xl bg-secondary/70 p-3.5 text-xs">
+                <Truck className="size-4 shrink-0 text-gold" />
+                <span>
+                  Envio pelos <strong>Correios</strong> (PAC ou SEDEX). O frete é calculado pelo seu CEP no checkout.
+                </span>
+              </p>
 
               <ul className="space-y-3">
                 {lines.map(({ key, product, quantity, lineTotal, custom }) => (
@@ -145,18 +125,16 @@ export function CartSheet() {
                   <dd>{formatBRL(subtotal)}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Envio para todo o Brasil</dt>
-                  <dd className={shipping === 0 ? "font-medium text-success" : ""}>
-                    {shipping === 0 ? "Grátis" : formatBRL(shipping)}
-                  </dd>
+                  <dt className="text-muted-foreground">Frete dos Correios</dt>
+                  <dd className="text-muted-foreground">calculado no checkout</dd>
                 </div>
               </dl>
               <div className="mt-4 flex items-end justify-between border-t border-border/70 pt-4">
                 <div>
                   <p className="font-serif text-xl">Total</p>
-                  <p className="text-[11px] text-muted-foreground">à vista no PIX</p>
+                  <p className="text-[11px] text-muted-foreground">sem o frete • à vista no PIX</p>
                 </div>
-                <p className="font-serif text-3xl">{formatBRL(total)}</p>
+                <p className="font-serif text-3xl">{formatBRL(subtotal)}</p>
               </div>
               <p className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-secondary/70 py-2 text-[11px] text-muted-foreground">
                 <QrCode className="size-3.5" /> PIX instantâneo com QR Code • Envio com rastreio
@@ -170,7 +148,7 @@ export function CartSheet() {
                   <span className="size-1.5 rounded-full bg-gold" /> Finalizar Pedido via PIX
                 </span>
                 <span className="flex items-center gap-1.5 font-serif text-lg text-gold-line">
-                  {formatBRL(total)} <ArrowRight className="size-4" />
+                  <ArrowRight className="size-4" />
                 </span>
               </button>
               <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">

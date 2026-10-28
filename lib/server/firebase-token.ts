@@ -27,7 +27,7 @@ export function firebaseProjectId() {
 
 export const firebaseEnabled = () => Boolean(firebaseProjectId() && process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
 
-export async function verifyFirebaseIdToken(idToken: string, provider: "google.com" | "phone") {
+export async function verifyFirebaseIdToken(idToken: string, provider: "google.com") {
   const projectId = firebaseProjectId()
   if (!projectId) throw new Error("Firebase não configurado")
   if (typeof idToken !== "string" || idToken.length > 4096) throw new Error("Token inválido")

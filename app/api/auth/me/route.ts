@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ user: user ? toPublicUser(user) : null })
 }
 
-// Atualiza nome e CPF. O telefone só muda pela verificação por SMS (/api/auth/phone).
+// Atualiza nome, CPF e celular (WhatsApp de contato)
 export async function PATCH(request: NextRequest) {
   if (!sameOrigin(request)) return NextResponse.json({ error: "Origem inválida" }, { status: 403 })
   const auth = await requireRole(request)
@@ -24,6 +24,7 @@ export async function PATCH(request: NextRequest) {
   const updated = await updateUser(auth.id, {
     name: parsed.data.name,
     cpf: parsed.data.cpf || undefined,
+    phone: parsed.data.phone || undefined,
   })
   return NextResponse.json({ user: updated ? toPublicUser(updated) : null })
 }

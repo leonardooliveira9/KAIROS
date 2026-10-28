@@ -18,8 +18,8 @@ export interface SessionUser {
   googleLinked: boolean
 }
 
-/** Conta pronta para comprar: e-mail e telefone confirmados */
-export const isFullyVerified = (u: SessionUser | null) => Boolean(u?.emailVerifiedAt && u?.phoneVerifiedAt && u?.phone)
+/** Conta pronta para comprar: e-mail confirmado (o celular é só contato, informado no checkout) */
+export const isFullyVerified = (u: SessionUser | null) => Boolean(u?.emailVerifiedAt)
 
 interface AuthContextType {
   user: SessionUser | null

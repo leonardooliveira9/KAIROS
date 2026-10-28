@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { getProduct, type Product } from "@/lib/products"
-import { shippingFor, storeConfig } from "@/lib/store-config"
 import { CUSTOM_SLUG, customKey, customProduct, parseCustom, type CustomRosary } from "@/lib/customizer"
 
 const STORAGE_KEY = "kairos-cart-v2"
@@ -31,11 +30,8 @@ function productOf(i: StoredItem) {
 interface CartContextType {
   lines: CartLine[]
   totalItems: number
+  /** Soma dos produtos; o frete é cotado pelo CEP no checkout */
   subtotal: number
-  shipping: number
-  total: number
-  /** Quantos terços faltam para o frete grátis (0 = já tem) */
-  missingForFreeShipping: number
   hydrated: boolean
   addItem: (slug: string, quantity?: number, openCart?: boolean) => void
   addCustom: (custom: CustomRosary, quantity?: number, openCart?: boolean) => void
@@ -119,14 +115,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     })
     const totalItems = lines.reduce((s, l) => s + l.quantity, 0)
     const subtotal = lines.reduce((s, l) => s + l.lineTotal, 0)
-    const shipping = shippingFor(totalItems)
     return {
       lines,
       totalItems,
       subtotal,
-      shipping,
-      total: subtotal + shipping,
-      missingForFreeShipping: Math.max(0, storeConfig.shipping.freeFromQuantity - totalItems),
       hydrated,
       addItem,
       addCustom,

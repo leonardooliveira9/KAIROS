@@ -24,7 +24,7 @@ export interface User {
   passwordResetExpiresAt?: number
   /** Conta Google ligada (uid do Firebase); contas só-Google ficam com passwordHash vazio */
   googleUid?: string
-  /** Preenchido quando o telefone em `phone` foi confirmado por SMS */
+  /** Legado: contas antigas confirmavam o celular por SMS; não é mais exigido */
   phoneVerifiedAt?: string
 }
 
@@ -137,17 +137,13 @@ export function toPublicUser(user: User): PublicUser {
   return { ...rest, hasPassword: Boolean(user.passwordHash), googleLinked: Boolean(user.googleUid) }
 }
 
-/** Conta pronta para comprar: e-mail e telefone confirmados */
+/** Conta pronta para comprar: e-mail confirmado (o celular é só contato, informado no checkout) */
 export function isFullyVerified(user: User) {
-  return Boolean(user.emailVerifiedAt && user.phoneVerifiedAt && user.phone)
+  return Boolean(user.emailVerifiedAt)
 }
 
 export async function findUserByGoogleUid(uid: string) {
   return (await findDocs<User>("users", "googleUid", uid))[0]
-}
-
-export async function findUserByVerifiedPhone(phone: string) {
-  return (await findDocs<User>("users", "phone", phone)).find((u) => u.phoneVerifiedAt)
 }
 
 /**

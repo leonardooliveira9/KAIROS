@@ -37,24 +37,20 @@ Há dois papéis: **cliente** (padrão) e **admin**.
 
 | | Visitante | Cliente | Admin |
 | --- | --- | --- | --- |
-| Comprar (checkout PIX) | — | ✓ com e-mail **e** celular confirmados | ✓ (mesma regra) |
+| Comprar (checkout PIX) | — | ✓ com e-mail confirmado | ✓ (mesma regra) |
 | Acompanhar pedido por nº + e-mail | ✓ | ✓ | ✓ |
 | `/conta`: meus pedidos, dados, senha | — | ✓ | ✓ |
 | `/admin/pedidos` e `/admin/usuarios` | — | — | ✓ |
 
 - Telas: `/entrar`, `/cadastrar`, `/conta`, `/esqueci-senha`, `/redefinir-senha`.
-- **Login com Google** e **confirmação do celular por SMS** usam o Firebase Auth (variáveis `NEXT_PUBLIC_FIREBASE_*`).
+- **Login com Google** usa o Firebase Auth (variáveis `NEXT_PUBLIC_FIREBASE_*`).
   O servidor confere o token do Firebase pelas chaves públicas do Google — não há chave privada.
   No console do Firebase:
-  1. *Authentication > Método de login*: ative **Google** e **Telefone**;
-  2. *Authentication > Configurações > Política de região de SMS*: **permita o Brasil** — sem isso o Firebase recusa
-     todo SMS ("SMS unable to be sent until this region enabled");
-  3. *Authentication > Configurações > Domínios autorizados*: adicione o domínio da loja;
-  4. sem conta de faturamento o limite é 10 SMS por dia; para testar sem gastar, cadastre números de teste com
-     código fixo em *Método de login > Telefone*.
+  1. *Authentication > Método de login*: ative **Google**;
+  2. *Authentication > Configurações > Domínios autorizados*: adicione o domínio da loja.
 - Quem entra com Google já tem o e-mail confirmado. Se já existia uma conta com o mesmo e-mail **não confirmado**,
   o Google é ligado a ela e a senha antiga é apagada (evita que alguém que cadastrou o e-mail de outra pessoa mantenha acesso).
-- Um celular confirmado só pode pertencer a uma conta. O telefone só muda por nova verificação.
+- O celular (WhatsApp) é só contato: o cliente informa no checkout ou em *Minha conta > Meus dados*, sem verificação.
 - **Primeiro admin**: coloque seu e-mail em `ADMIN_EMAILS`, crie a conta em `/cadastrar` e confirme o e-mail pelo link enviado (ou entre com o Google). O acesso de admin só é liberado depois da confirmação.
   Isso só funciona enquanto a loja não tem nenhum admin. Os próximos são promovidos em `/admin/usuarios`.
 - Senhas com scrypt; sessão em cookie `httpOnly` assinado com `SESSION_SECRET`
