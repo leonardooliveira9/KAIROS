@@ -28,15 +28,30 @@ const g = globalThis as unknown as {
   __kairosFiles?: Partial<Record<Table, Map<string, Doc>>>
 }
 
+/**
+ * TLS da conexão:
+ * - DATABASE_CA (certificado PEM do provedor, ex.: Aiven) liga o TLS e confere o servidor por esse certificado;
+ * - DATABASE_SSL=true para provedores com certificado público; "insecure" aceita certificado autoassinado.
+ */
+function sslOptions() {
+  const ca = process.env.DATABASE_CA?.replace(/\\n/g, "\n").trim()
+  const ssl = process.env.DATABASE_SSL
+  if (ca) return { minVersion: "TLSv1.2", ca, rejectUnauthorized: ssl !== "insecure" }
+  if (ssl === "true" || ssl === "insecure") return { minVersion: "TLSv1.2", rejectUnauthorized: ssl === "true" }
+  return undefined
+}
+
+/** Tira o "?ssl-mode=REQUIRED" que painéis como o da Aiven põem na URL: o mysql2 não o entende (o TLS vem de sslOptions) */
+function databaseUri() {
+  const url = new URL(process.env.DATABASE_URL!)
+  url.searchParams.delete("ssl-mode")
+  url.searchParams.delete("sslmode")
+  return url.toString()
+}
+
 async function createPool() {
   const mysql = await import("mysql2/promise")
-  const ssl = process.env.DATABASE_SSL
-  const pool = mysql.createPool({
-    uri: process.env.DATABASE_URL,
-    connectionLimit: 3,
-    // DATABASE_SSL=true para provedores que exigem TLS; "insecure" aceita certificado autoassinado
-    ssl: ssl === "true" || ssl === "insecure" ? { minVersion: "TLSv1.2", rejectUnauthorized: ssl === "true" } : undefined,
-  })
+  const pool = mysql.createPool({ uri: databaseUri(), connectionLimit: 3, ssl: sslOptions() })
   for (const table of ["users", "orders"] satisfies Table[]) {
     await pool.query(
       `CREATE TABLE IF NOT EXISTS ${table} (
