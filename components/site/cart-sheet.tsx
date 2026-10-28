@@ -91,7 +91,7 @@ export function CartSheet() {
                     {missingForFreeShipping > 0 ? (
                       <span>
                         {/* o frete grátis conta terços, não valor */}
-                        Falta apenas <strong>{pluralize(missingForFreeShipping, "terço", "terços")}</strong> para{" "}
+                        {missingForFreeShipping > 1 ? "Faltam" : "Falta"} apenas <strong>{pluralize(missingForFreeShipping, "terço", "terços")}</strong> para{" "}
                         <strong>Frete Grátis</strong>
                       </span>
                     ) : (
