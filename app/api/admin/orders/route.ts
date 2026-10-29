@@ -1,7 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { z } from "zod"
 import { requireRole, sameOrigin } from "@/lib/server/auth"
-import { getOrder, listOrders, redeemOrderCoupon, updateOrder, type Order } from "@/lib/server/orders-store"
+import {
+  expireUnconfirmedReport,
+  getOrder,
+  listOrders,
+  redeemOrderCoupon,
+  updateOrder,
+  type Order,
+} from "@/lib/server/orders-store"
 import { notifyOrder } from "@/lib/server/order-emails"
 
 export const runtime = "nodejs"
@@ -10,7 +17,9 @@ export const dynamic = "force-dynamic"
 export async function GET(request: NextRequest) {
   const auth = await requireRole(request, "admin")
   if (auth instanceof NextResponse) return auth
-  return NextResponse.json({ orders: await listOrders() })
+  // avisos de PIX vencidos viram "cancelado" já na listagem
+  const orders = await Promise.all((await listOrders()).map(expireUnconfirmedReport))
+  return NextResponse.json({ orders })
 }
 
 const patchSchema = z.object({

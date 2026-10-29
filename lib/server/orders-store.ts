@@ -59,8 +59,12 @@ export interface Order {
   customerReportedPaidAt?: string
   shippedAt?: string
   trackingCode?: string
-  /** Cancelado automaticamente porque o PIX venceu sem pagamento (vazio = cancelado pelo admin) */
-  canceledReason?: "payment_expired"
+  /**
+   * Cancelado automaticamente (vazio = cancelado pelo admin):
+   * payment_expired = o PIX venceu sem pagamento; payment_not_found = o cliente avisou que pagou,
+   * mas a loja não confirmou em REPORT_CONFIRM_DAYS dias
+   */
+  canceledReason?: "payment_expired" | "payment_not_found"
 }
 
 // Guardado pelo módulo db: MySQL (DATABASE_URL) ou arquivo JSON local em desenvolvimento
@@ -121,6 +125,23 @@ export async function redeemOrderCoupon(order: Order) {
   return updateOrder(order.id, { coupon: { ...order.coupon, redeemed: true } })
 }
 
+/** Prazo para a loja confirmar um "Já fiz o PIX"; depois disso o pedido é cancelado sozinho */
+export const REPORT_CONFIRM_DAYS = 2
+
+/**
+ * PIX estático avisado pelo cliente e não confirmado no prazo: cancela (só se ainda estiver pendente).
+ * Não há tarefa agendada: roda sempre que o pedido é lido (admin, Minha conta, checkout, acompanhar pedido).
+ */
+export async function expireUnconfirmedReport(order: Order): Promise<Order> {
+  if (order.status !== "awaiting_payment" || order.payment.provider !== "static_pix" || !order.customerReportedPaidAt) {
+    return order
+  }
+  const age = Date.now() - new Date(order.customerReportedPaidAt).getTime()
+  if (age < REPORT_CONFIRM_DAYS * 24 * 60 * 60 * 1000) return order
+  const { order: updated } = await updateIfAwaiting(order.id, { status: "canceled", canceledReason: "payment_not_found" })
+  return updated ?? order
+}
+
 /** PIX venceu: cancela só se o pedido ainda estiver esperando pagamento (não desfaz um pagamento já confirmado) */
 export async function markPaymentExpired(id: string) {
   return (await updateIfAwaiting(id, { status: "canceled", canceledReason: "payment_expired" })).order
@@ -138,6 +159,7 @@ export function publicOrder(order: Order) {
     createdAt: order.createdAt,
     paidAt: order.paidAt ?? null,
     reportedPaidAt: order.customerReportedPaidAt ?? null,
+    canceledReason: order.canceledReason ?? null,
     shippedAt: order.shippedAt ?? null,
     trackingCode: order.trackingCode ?? null,
     firstName: order.customer.fullName.split(" ")[0],

@@ -39,6 +39,7 @@ interface Order {
   paidAt?: string
   /** Cliente tocou em "Já fiz o PIX" */
   customerReportedPaidAt?: string
+  canceledReason?: "payment_expired" | "payment_not_found"
   shippedAt?: string
   trackingCode?: string
 }
@@ -272,6 +273,12 @@ function OrderDetail({ order, onUpdate }: { order: Order; onUpdate: (id: string,
         <StatusBadge status={order.status} />
         <span className="text-xs text-muted-foreground">{order.payment.provider === "abacatepay" ? "PIX AbacatePay (automático)" : "PIX estático (confirmação manual)"}</span>
       </div>
+      {order.status === "canceled" && order.canceledReason === "payment_not_found" && (
+        <p className="mt-3 rounded-xl bg-secondary/70 px-4 py-3 text-xs text-muted-foreground">
+          Cancelado automaticamente: o cliente avisou que pagou, mas o pagamento não foi confirmado em 2 dias. Se o PIX
+          aparecer depois, use “Confirmar pagamento recebido”.
+        </p>
+      )}
 
       <section className="mt-6 space-y-1 rounded-xl bg-secondary/60 p-4 text-sm">
         <p className="font-medium">{order.customer.fullName}</p>
@@ -333,7 +340,7 @@ function OrderDetail({ order, onUpdate }: { order: Order; onUpdate: (id: string,
             <strong>{formatBRL(order.total)}</strong> e confirme abaixo.
           </p>
         )}
-        {order.status === "awaiting_payment" && (
+        {(order.status === "awaiting_payment" || (order.status === "canceled" && order.canceledReason === "payment_not_found")) && (
           <button
             type="button"
             disabled={busy}

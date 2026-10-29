@@ -1,12 +1,14 @@
 import "server-only"
 import { checkPixCharge, PAID_STATUSES } from "./abacatepay"
-import { getOrder, markPaid, markPaymentExpired, updateIfAwaiting, type Order } from "./orders-store"
+import { expireUnconfirmedReport, getOrder, markPaid, markPaymentExpired, updateIfAwaiting, type Order } from "./orders-store"
 
 /**
  * Consulta a AbacatePay e atualiza o pedido. Nunca confia no navegador:
  * o pedido só vira "pago" quando a própria AbacatePay responde PAID.
  */
 export async function syncPayment(order: Order, { force = false } = {}): Promise<Order> {
+  // PIX estático: não há o que consultar; só o prazo do "Já fiz o PIX"
+  if (order.payment.provider === "static_pix") return expireUnconfirmedReport(order)
   if (order.status !== "awaiting_payment" || order.payment.provider !== "abacatepay" || !order.payment.chargeId) {
     return order
   }

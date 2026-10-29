@@ -68,6 +68,7 @@ export function CheckoutFlow() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [simulating, setSimulating] = useState(false)
+  const [canceledOrder, setCanceledOrder] = useState<string | null>(null)
   const [paid, setPaid] = useState<{
     orderId: string
     lines: SummaryLine[]
@@ -320,6 +321,11 @@ export function CheckoutFlow() {
         const res = await fetch(`/api/orders/${pix.orderId}/status`, { cache: "no-store" })
         const data = await res.json()
         if (active && (data.status === "paid" || data.status === "shipped")) finish(pix.orderId)
+        // cancelado pela loja (ou aviso não confirmado no prazo): sai da tela do PIX
+        if (active && data.status === "canceled") {
+          writeSession(PENDING_KEY, null)
+          setCanceledOrder(pix.orderId)
+        }
       } catch {
         // tenta de novo no próximo ciclo
       }
@@ -642,7 +648,28 @@ export function CheckoutFlow() {
 
           {step === 3 && (
             <>
-              {pix ? (
+              {canceledOrder ? (
+                <div className="surface flex min-h-80 flex-col items-center justify-center p-8 text-center">
+                  <p className="font-serif text-xl">Este pedido foi cancelado</p>
+                  <p className="mt-2 max-w-sm text-sm text-muted-foreground">
+                    O pagamento do pedido <strong>{canceledOrder}</strong> não foi confirmado. Se você já pagou, fale com a
+                    gente e mande o comprovante.
+                  </p>
+                  <div className="mt-5 flex flex-wrap justify-center gap-3">
+                    <a
+                      href={whatsappLink(`Olá! O pedido ${canceledOrder} foi cancelado, mas eu fiz o PIX.`)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2.5 text-sm"
+                    >
+                      <MessageCircle className="size-4" /> Falar no WhatsApp
+                    </a>
+                    <Link href="/conta" className="rounded-full bg-primary px-5 py-2.5 text-sm text-primary-foreground">
+                      Ver meus pedidos
+                    </Link>
+                  </div>
+                </div>
+              ) : pix ? (
                 <PixPayment
                   pix={pix}
                   onSimulate={simulate}

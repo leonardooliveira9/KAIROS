@@ -46,6 +46,8 @@ interface AccountOrder {
   paymentExpired: boolean
   /** Cliente avisou que pagou o PIX; a loja está conferindo */
   reportedPaidAt: string | null
+  /** payment_not_found = avisou que pagou, mas a loja não encontrou o PIX no prazo */
+  canceledReason: "payment_expired" | "payment_not_found" | null
   /** Presente só enquanto o PIX pendente ainda pode ser pago */
   pix: { brCode: string; qrImage: string; expiresAt: string } | null
 }
@@ -360,6 +362,24 @@ function OrderCard({ order: o, onExpired }: { order: AccountOrder; onExpired: ()
             </button>
           </div>
           {showPix && <OrderPix pix={o.pix} total={o.total} onExpired={onExpired} />}
+        </div>
+      )}
+
+      {o.status === "canceled" && o.canceledReason === "payment_not_found" && (
+        <div className="mt-4 rounded-xl bg-secondary/70 p-4 text-sm">
+          <p>Não encontramos o PIX deste pedido em até 2 dias depois do seu aviso, então ele foi cancelado.</p>
+          <p className="mt-1 text-muted-foreground">
+            Se você pagou,{" "}
+            <a
+              href={whatsappLink(`Olá! Paguei o pedido ${o.id} e ele foi cancelado. Segue o comprovante.`)}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-4"
+            >
+              mande o comprovante pelo WhatsApp
+            </a>{" "}
+            que resolvemos.
+          </p>
         </div>
       )}
 
