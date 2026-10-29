@@ -1,10 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Check, CircleHelp, Clock, Copy, Info, Loader2, ScanLine, ShieldCheck, Zap } from "lucide-react"
+import { Check, CircleHelp, Clock, Copy, Info, Loader2, MessageCircle, ScanLine, ShieldCheck, Zap } from "lucide-react"
 import { toast } from "sonner"
 import { formatBRL } from "@/lib/format"
-import { storeConfig } from "@/lib/store-config"
+import { storeConfig, whatsappLink } from "@/lib/store-config"
 import { cn } from "@/lib/utils"
 
 export interface PixInfo {
@@ -14,6 +14,8 @@ export interface PixInfo {
   shipping: { name: string; price: number; days: number }
   /** Cupom aplicado e o desconto em R$, como o servidor calculou */
   discount: { code: string; amount: number } | null
+  /** PIX estático: quando o cliente avisou que pagou (a loja confere e confirma) */
+  reportedAt?: string | null
   total: number
   payment: {
     mode: "abacatepay" | "static_pix"
@@ -41,15 +43,23 @@ export function PixPayment({
   onSimulate,
   simulating,
   onRegenerate,
+  onReport,
+  reporting,
 }: {
   pix: PixInfo
   onSimulate: () => void
   simulating: boolean
   onRegenerate: () => void
+  /** "Já fiz o PIX" (só no PIX estático) */
+  onReport: () => void
+  reporting: boolean
 }) {
-  const { expired, label } = useCountdown(pix.payment.expiresAt)
+  const { expired: timeUp, label } = useCountdown(pix.payment.expiresAt)
   const [copied, setCopied] = useState(false)
   const automatic = pix.payment.mode === "abacatepay"
+  const reported = !automatic && Boolean(pix.reportedAt)
+  // depois do aviso o prazo não importa mais: a loja confere o PIX que já foi feito
+  const expired = timeUp && !reported
 
   const copy = async () => {
     try {
@@ -79,7 +89,25 @@ export function PixPayment({
         </div>
       </div>
 
-      {expired ? (
+      {reported ? (
+        <div role="status" className="mt-5 rounded-xl border border-gold-line bg-gold-soft/60 p-4 text-sm">
+          <p className="flex items-center gap-2 font-medium text-gold-strong">
+            <Loader2 className="size-4 animate-spin" /> Recebemos seu aviso. Estamos conferindo o PIX.
+          </p>
+          <p className="mt-1.5 leading-relaxed text-muted-foreground">
+            Assim que o valor aparecer na conta da loja, confirmamos o pedido e <strong>esta tela muda sozinha</strong>.
+            Você também recebe o e-mail de confirmação e acompanha em Minha conta.
+          </p>
+          <a
+            href={whatsappLink(`Olá! Fiz o PIX de ${formatBRL(pix.total)} do pedido ${pix.orderId}. Segue o comprovante.`)}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-xs font-medium"
+          >
+            <MessageCircle className="size-3.5" /> Enviar comprovante pelo WhatsApp (opcional)
+          </a>
+        </div>
+      ) : expired ? (
         <div className="mt-5 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
           <p className="font-medium text-destructive">Este código PIX expirou.</p>
           <p className="mt-1 text-muted-foreground">Gere um novo código para concluir sua compra.</p>
@@ -158,6 +186,22 @@ export function PixPayment({
           </button>
         </div>
       </div>
+
+      {!automatic && !reported && !expired && (
+        <div className="mt-5 rounded-2xl border border-border p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <p className="text-[13px] text-muted-foreground">
+            <strong className="text-foreground">Já pagou?</strong> Avise a loja para conferirmos e confirmarmos seu pedido.
+          </p>
+          <button
+            type="button"
+            onClick={onReport}
+            disabled={reporting}
+            className="mt-3 inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-full bg-success px-5 py-3 text-sm font-medium text-white disabled:opacity-60 sm:mt-0 sm:w-auto"
+          >
+            {reporting ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Já fiz o PIX
+          </button>
+        </div>
+      )}
 
       {pix.payment.canSimulate && !expired && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-gold-line bg-gold-soft/50 px-4 py-2.5">

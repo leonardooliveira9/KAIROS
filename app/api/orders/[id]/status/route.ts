@@ -12,5 +12,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 })
 
   const current = await syncPayment(order)
-  return NextResponse.json({ status: current.status, paidAt: current.paidAt ?? null })
+  return NextResponse.json({
+    status: current.status,
+    paidAt: current.paidAt ?? null,
+    reportedPaidAt: current.customerReportedPaidAt ?? null,
+  })
 }

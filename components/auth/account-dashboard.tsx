@@ -44,14 +44,17 @@ interface AccountOrder {
   total: number
   /** PIX pendente cujo prazo já acabou */
   paymentExpired: boolean
+  /** Cliente avisou que pagou o PIX; a loja está conferindo */
+  reportedPaidAt: string | null
   /** Presente só enquanto o PIX pendente ainda pode ser pago */
   pix: { brCode: string; qrImage: string; expiresAt: string } | null
 }
 
-type DisplayStatus = AccountOrder["status"] | "expired"
+type DisplayStatus = AccountOrder["status"] | "expired" | "reported"
 
 const statusLabel: Record<DisplayStatus, { label: string; className: string }> = {
   awaiting_payment: { label: "Aguardando PIX", className: "bg-warning-soft text-warning" },
+  reported: { label: "Conferindo pagamento", className: "bg-gold-soft text-gold-strong" },
   expired: { label: "PIX expirado", className: "bg-secondary text-muted-foreground" },
   paid: { label: "Pago • em preparo", className: "bg-success-soft text-success" },
   shipped: { label: "Enviado", className: "bg-secondary text-foreground" },
@@ -229,7 +232,7 @@ function OrdersTab() {
   }, [load])
 
   // enquanto houver PIX esperando pagamento, confere o status a cada 10s
-  const waiting = orders?.some((o) => o.pix) ?? false
+  const waiting = orders?.some((o) => o.pix || (o.status === "awaiting_payment" && o.reportedPaidAt)) ?? false
   useEffect(() => {
     if (!waiting) return
     const t = setInterval(load, 10_000)
@@ -290,6 +293,7 @@ function OrdersTab() {
  * quanto o que a sincronização com a AbacatePay já cancelou por vencimento.
  */
 function displayStatus(o: AccountOrder): DisplayStatus {
+  if (o.status === "awaiting_payment" && o.reportedPaidAt) return "reported"
   return o.paymentExpired && !o.paidAt ? "expired" : o.status
 }
 

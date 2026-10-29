@@ -37,9 +37,14 @@ interface Order {
   total: number
   payment: { provider: "abacatepay" | "static_pix" }
   paidAt?: string
+  /** Cliente tocou em "Já fiz o PIX" */
+  customerReportedPaidAt?: string
   shippedAt?: string
   trackingCode?: string
 }
+
+/** Pedido esperando a loja conferir um PIX que o cliente diz ter feito */
+const toCheck = (o: Order) => o.status === "awaiting_payment" && Boolean(o.customerReportedPaidAt)
 
 const statusMeta: Record<Status, { label: string; className: string }> = {
   awaiting_payment: { label: "Aguardando PIX", className: "bg-warning-soft text-warning" },
@@ -106,18 +111,21 @@ export function AdminOrders() {
     const confirmed = orders.filter((o) => o.status === "paid" || o.status === "shipped")
     return [
       { label: "Pedidos", value: String(orders.length), icon: Package },
-      { label: "Aguardando PIX", value: String(orders.filter((o) => o.status === "awaiting_payment").length), icon: Clock },
+      { label: "Conferir PIX", value: String(orders.filter(toCheck).length), icon: Clock },
       { label: "A enviar", value: String(orders.filter((o) => o.status === "paid").length), icon: Truck },
       { label: "Faturamento", value: formatBRL(confirmed.reduce((s, o) => s + o.total, 0)), icon: Wallet },
     ]
   }, [orders])
 
-  const visible = orders.filter((o) => {
-    if (filter !== "all" && o.status !== filter) return false
-    const q = query.trim().toLowerCase()
-    if (!q) return true
-    return [o.id, o.customer.fullName, o.customer.email, o.address.city].some((v) => v.toLowerCase().includes(q))
-  })
+  const visible = orders
+    .filter((o) => {
+      if (filter !== "all" && o.status !== filter) return false
+      const q = query.trim().toLowerCase()
+      if (!q) return true
+      return [o.id, o.customer.fullName, o.customer.email, o.address.city].some((v) => v.toLowerCase().includes(q))
+    })
+    // PIX avisado pelo cliente vem primeiro: é o que precisa de ação
+    .sort((a, b) => Number(toCheck(b)) - Number(toCheck(a)))
 
   const selected = orders.find((o) => o.id === selectedId) ?? null
 
@@ -210,7 +218,13 @@ export function AdminOrders() {
                     <td className="px-5 py-4">{o.items.reduce((s, i) => s + i.quantity, 0)}</td>
                     <td className="px-5 py-4 text-right font-medium">{formatBRL(o.total)}</td>
                     <td className="px-5 py-4">
-                      <StatusBadge status={o.status} />
+                      {toCheck(o) ? (
+                        <span className="inline-flex rounded-full bg-gold-soft px-2.5 py-1 text-[11px] font-medium text-gold-strong">
+                          Cliente avisou que pagou
+                        </span>
+                      ) : (
+                        <StatusBadge status={o.status} />
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -313,6 +327,12 @@ function OrderDetail({ order, onUpdate }: { order: Order; onUpdate: (id: string,
       </ul>
 
       <div className="mt-6 space-y-3">
+        {toCheck(order) && (
+          <p className="rounded-xl bg-gold-soft px-4 py-3 text-[13px] text-gold-strong">
+            O cliente avisou que pagou em {formatDateTime(order.customerReportedPaidAt!)}. Confira no extrato um PIX de{" "}
+            <strong>{formatBRL(order.total)}</strong> e confirme abaixo.
+          </p>
+        )}
         {order.status === "awaiting_payment" && (
           <button
             type="button"

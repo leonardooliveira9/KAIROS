@@ -35,8 +35,10 @@ async function accountOrder(stored: Order) {
         })
       : stored
   const pending = order.status === "awaiting_payment"
+  // cliente avisou que pagou: fica "em conferência", não "expirado", até a loja confirmar ou cancelar
   const paymentExpired =
     !order.paidAt &&
+    !(pending && order.customerReportedPaidAt) &&
     ((pending && new Date(order.payment.expiresAt).getTime() <= Date.now()) ||
       (order.status === "canceled" && order.canceledReason === "payment_expired"))
 
@@ -45,7 +47,7 @@ async function accountOrder(stored: Order) {
     paymentExpired,
     // só para quem ainda pode pagar: código copia e cola + QR gerado a partir dele
     pix:
-      pending && !paymentExpired
+      pending && !paymentExpired && !order.customerReportedPaidAt
         ? {
             brCode: order.payment.brCode,
             qrImage: await QRCode.toDataURL(order.payment.brCode, { margin: 1, width: 320, errorCorrectionLevel: "M" }),

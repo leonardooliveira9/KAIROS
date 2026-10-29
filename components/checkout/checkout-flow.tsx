@@ -111,7 +111,8 @@ export function CheckoutFlow() {
     const pending = readSession<PixInfo>(PENDING_KEY)
     if (
       pending?.shipping &&
-      new Date(pending.payment.expiresAt).getTime() > Date.now() &&
+      // depois do "Já fiz o PIX", a tela de conferência volta mesmo com o prazo do código vencido
+      (pending.reportedAt || new Date(pending.payment.expiresAt).getTime() > Date.now()) &&
       Math.abs(pending.subtotal - cart.subtotal) < 0.01
     ) {
       setPix(pending)
@@ -350,6 +351,26 @@ export function CheckoutFlow() {
     writeSession(PENDING_KEY, null)
     setPix(null)
     createPix()
+  }
+
+  // "Já fiz o PIX": avisa a loja para conferir; o polling acima mostra a confirmação quando ela vier
+  const [reporting, setReporting] = useState(false)
+  const reportPaid = async () => {
+    if (!pix) return
+    setReporting(true)
+    try {
+      const res = await fetch(`/api/orders/${pix.orderId}/report-payment`, { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Não foi possível avisar a loja.")
+      if (data.status === "paid" || data.status === "shipped") return finish(pix.orderId)
+      const info = { ...pix, reportedAt: data.reportedPaidAt ?? new Date().toISOString() }
+      setPix(info)
+      writeSession(PENDING_KEY, info)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Não foi possível avisar a loja.")
+    } finally {
+      setReporting(false)
+    }
   }
 
   if (!cart.hydrated || authLoading) {
@@ -622,7 +643,14 @@ export function CheckoutFlow() {
           {step === 3 && (
             <>
               {pix ? (
-                <PixPayment pix={pix} onSimulate={simulate} simulating={simulating} onRegenerate={regenerate} />
+                <PixPayment
+                  pix={pix}
+                  onSimulate={simulate}
+                  simulating={simulating}
+                  onRegenerate={regenerate}
+                  onReport={reportPaid}
+                  reporting={reporting}
+                />
               ) : (
                 <div className="surface flex min-h-80 flex-col items-center justify-center p-8 text-center">
                   {creating ? (

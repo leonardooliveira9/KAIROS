@@ -55,6 +55,8 @@ export interface Order {
     lastCheckedAt?: number
   }
   paidAt?: string
+  /** PIX estático: quando o cliente tocou em "Já fiz o PIX" (a loja confere no banco e confirma no admin) */
+  customerReportedPaidAt?: string
   shippedAt?: string
   trackingCode?: string
   /** Cancelado automaticamente porque o PIX venceu sem pagamento (vazio = cancelado pelo admin) */
@@ -135,6 +137,7 @@ export function publicOrder(order: Order) {
     status: order.status,
     createdAt: order.createdAt,
     paidAt: order.paidAt ?? null,
+    reportedPaidAt: order.customerReportedPaidAt ?? null,
     shippedAt: order.shippedAt ?? null,
     trackingCode: order.trackingCode ?? null,
     firstName: order.customer.fullName.split(" ")[0],
