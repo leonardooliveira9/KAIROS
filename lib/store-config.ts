@@ -27,7 +27,7 @@ export const storeConfig = {
   },
   pix: {
     /** Chave PIX usada no modo PIX estático (quando não há ABACATEPAY_API_KEY) */
-    key: "bac475e5-88ef-4402-8e5b-dde1a7cc5474",
+    key: "ec01ca5f-3b57-4f94-94d4-97a94afdca06",
     /** Até 25 caracteres, sem acentos — aparece no app do banco */
     merchantName: "KAIROS TERCOS",
     /** Até 15 caracteres, sem acentos */
