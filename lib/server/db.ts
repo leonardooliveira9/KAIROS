@@ -53,11 +53,19 @@ async function createPool() {
   const mysql = await import("mysql2/promise")
   const pool = mysql.createPool({ uri: databaseUri(), connectionLimit: 3, ssl: sslOptions() })
   for (const table of ["users", "orders", "products", "coupons"] satisfies Table[]) {
+    // users já nasce com a coluna gerada do e-mail e o índice único (assim funciona também no TiDB,
+    // que não aceita adicionar coluna gerada STORED com ALTER TABLE)
+    const emailColumn =
+      table === "users"
+        ? `email VARCHAR(255) GENERATED ALWAYS AS (JSON_UNQUOTE(JSON_EXTRACT(data, '$.email'))) STORED,
+        UNIQUE KEY users_email (email),`
+        : ""
     await pool.query(
       `CREATE TABLE IF NOT EXISTS ${table} (
         id VARCHAR(64) NOT NULL PRIMARY KEY,
         created_at VARCHAR(32) NOT NULL,
         data LONGTEXT NOT NULL,
+        ${emailColumn}
         KEY ${table}_created (created_at)
       ) DEFAULT CHARSET=utf8mb4`,
     )
@@ -66,7 +74,7 @@ async function createPool() {
   return pool
 }
 
-/** Coluna gerada users.email + índice único. Tabelas antigas ganham a coluna no primeiro uso. */
+/** Tabelas users antigas (criadas sem a coluna email) ganham a coluna e o índice único no primeiro uso */
 async function ensureUniqueEmail(pool: Pool) {
   try {
     await pool.query(
@@ -81,7 +89,8 @@ async function ensureUniqueEmail(pool: Pool) {
       console.error("[db] há contas com e-mail repetido; resolva no banco para ativar o índice único de e-mail")
       return
     }
-    throw err
+    // banco que não aceita esse ALTER: segue sem o índice (o cadastro ainda confere o e-mail antes de criar)
+    console.error("[db] não foi possível criar o índice único de e-mail:", code ?? err)
   }
 }
 
